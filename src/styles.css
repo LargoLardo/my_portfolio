@@ -1,4 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Jersey+10&family=Pixelify+Sans:wght@400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jersey+10&display=swap');
+
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/departure-mono/DepartureMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 html,
 body,
@@ -282,18 +290,29 @@ canvas {
 
 /* Reference-style minimal portfolio */
 .minimal-portfolio {
+  --font-pixel: 'Departure Mono', ui-monospace, monospace;
   position: relative;
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
   background: #080909;
   color: #f2f0ec;
+  font-family: var(--font-pixel);
+  font-synthesis: none;
 }
 
 .minimal-portfolio::-webkit-scrollbar { display: none; }
 .minimal-portfolio:has(.project-dialog[open]) { overflow-y: hidden; }
 
-.life-canvas { z-index: 0; }
+/* Keep the background in the scroll container so wheel input stays native. */
+.life-canvas {
+  position: sticky;
+  top: 0;
+  bottom: auto;
+  height: 100dvh !important;
+  margin-bottom: -100dvh;
+  z-index: 0;
+}
 
 .life-shade {
   z-index: 1;
@@ -321,7 +340,7 @@ canvas {
   color: #f2f0ec;
   box-shadow: 0 0 90px 70px rgba(8, 9, 9, 0.8);
   backdrop-filter: blur(2px);
-  font-family: 'Pixelify Sans', ui-monospace, monospace;
+  font-family: var(--font-pixel);
 }
 
 [data-scroll-layer] {
@@ -348,12 +367,14 @@ canvas {
   letter-spacing: 0.025em;
   text-shadow: 4px 0 #555;
   text-transform: uppercase;
+  mask-image: repeating-linear-gradient(to bottom, #000 0 4px, #000c 4px 6px);
 }
 
 .intro {
   max-width: none;
   margin: 20px 0 32px;
   color: #8d9290;
+  font-family: var(--font-pixel);
   font-size: clamp(25px, calc(2.2vw + 3px), 29px);
   line-height: 1.5;
 }
@@ -367,7 +388,7 @@ canvas {
 .top-links a {
   border-bottom: 1px solid #2c302f;
   color: #a4aaa7;
-  font: 20px/1.8 'Pixelify Sans', ui-monospace, monospace;
+  font: 20px/1.8 var(--font-pixel);
   letter-spacing: 0.18em;
   text-decoration: none;
 }
@@ -390,7 +411,7 @@ canvas {
   align-items: center;
   margin: 0;
   color: #858b89;
-  font: 500 24px/1.4 'Pixelify Sans', ui-monospace, monospace;
+  font: 500 24px/1.4 var(--font-pixel);
   letter-spacing: 0.2em;
 }
 
@@ -485,7 +506,7 @@ canvas {
 .entry-heading > span {
   flex: 0 0 auto;
   color: #858b89;
-  font: italic 20px/1.2 'Pixelify Sans', ui-monospace, monospace;
+  font: 20px/1.2 var(--font-pixel);
 }
 
 .entry p {
@@ -499,7 +520,7 @@ canvas {
   display: block;
   margin-top: 10px;
   color: #687b73;
-  font: 18px/1.5 'Pixelify Sans', ui-monospace, monospace;
+  font: 18px/1.5 var(--font-pixel);
   letter-spacing: 0.09em;
 }
 
@@ -574,7 +595,7 @@ canvas {
   background: #0d100f;
   color: #e1e3e1;
   box-shadow: 0 24px 100px #0009;
-  font: 17px/1.6 'Pixelify Sans', ui-monospace, monospace;
+  font: 16.5px/1.7 var(--font-pixel);
 }
 
 .project-dialog::-webkit-scrollbar { display: none; }
@@ -592,7 +613,7 @@ canvas {
   background: #0d100f;
 }
 
-.project-dialog h2 { margin: 0; color: #f2f0ec; font-size: 28px; line-height: 1.2; }
+.project-dialog h2 { margin: 0; color: #f2f0ec; font-size: clamp(22px, 4vw, 28px); line-height: 1.2; }
 .project-dialog-header p { margin: 8px 0 0; color: #9aa49e; }
 
 .project-dialog-close {
@@ -695,6 +716,7 @@ canvas {
   top: 88px;
   width: 100px;
   color: inherit;
+  font-family: var(--font-pixel);
   font-size: 17px;
   font-weight: 500;
   letter-spacing: 0.16em;
@@ -705,7 +727,14 @@ canvas {
 .saturn-link:hover .saturn-ring { animation-duration: 0.6s; }
 .saturn-link:hover .saturn-planet { animation-duration: 0.7s; }
 
-.life-controls { right: 28px; bottom: 24px; gap: 7px; }
+.life-controls {
+  position: sticky;
+  width: max-content;
+  margin: -60px 28px 24px auto;
+  right: auto;
+  bottom: 24px;
+  gap: 7px;
+}
 .life-controls button {
   display: grid;
   width: 36px;
@@ -785,12 +814,12 @@ canvas {
   .portfolio-card header { margin-bottom: 60px; }
   .section-row { grid-template-columns: 1fr; gap: 24px; margin-top: 58px; }
   .section-row h2 { padding-bottom: 0; border-bottom: 0; }
-  .entry-heading { align-items: flex-start; }
+  .entry-heading { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
   .job-entry { grid-template-columns: 48px 1fr; gap: 14px; }
   .company-logo { width: 48px; height: 48px; }
   .title-row { align-items: flex-start; }
-  .saturn-link { flex-basis: 76px; width: 76px; height: 90px; transform: scale(0.82); transform-origin: top right; }
-  .life-controls { right: 12px; bottom: 12px; }
+  .saturn-link { flex-basis: 76px; width: 76px; height: 120px; transform: scale(0.82); transform-origin: top right; }
+  .life-controls { margin: -48px 12px 12px auto; bottom: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

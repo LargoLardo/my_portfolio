@@ -185,19 +185,10 @@ export default function MinimalPortfolio() {
       if (!reducedMotion && !frame) frame = requestAnimationFrame(animate)
     }
 
-    const scrollBackground = (event) => {
-      if (event.ctrlKey || !event.target.closest('.life-canvas, .life-controls')) return
-      event.preventDefault()
-      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? page.clientHeight : 1
-      page.scrollTop += event.deltaY * unit
-    }
-
     if (!reducedMotion) frame = requestAnimationFrame(animate)
     page.addEventListener('scroll', addMomentum, { passive: true })
-    page.addEventListener('wheel', scrollBackground, { passive: false })
     return () => {
       page.removeEventListener('scroll', addMomentum)
-      page.removeEventListener('wheel', scrollBackground)
       cancelAnimationFrame(frame)
     }
   }, [])
