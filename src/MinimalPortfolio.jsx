@@ -69,6 +69,13 @@ function LifeCanvas({ running, boardRef }) {
       canvas.style.width = `${innerWidth}px`
       canvas.style.height = `${innerHeight}px`
       context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+      const gradient = context.createRadialGradient(
+        innerWidth / 2, innerHeight / 2, 0,
+        innerWidth / 2, innerHeight / 2, Math.hypot(innerWidth, innerHeight) / 2,
+      )
+      gradient.addColorStop(0.34, '#3f5f50')
+      gradient.addColorStop(1, '#7bd88f')
+      context.fillStyle = gradient
     }
 
     const draw = (time = 0) => {
@@ -79,7 +86,6 @@ function LifeCanvas({ running, boardRef }) {
         lastStep = time
       }
       context.clearRect(0, 0, innerWidth, innerHeight)
-      context.fillStyle = '#3f5f50'
       for (let i = 0; i < state.cells.length; i += 1) {
         if (!state.cells[i]) continue
         const x = (i % state.columns) * state.cellSize
