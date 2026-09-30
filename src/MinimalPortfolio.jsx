@@ -8,6 +8,10 @@ const projects = [
     stack: 'PYTORCH / SWIFT / UNITY / FASTAPI',
     href: 'https://github.com/LargoLardo/reminiscence',
     image: '/reminiscence.png',
+    highlights: [
+      'Built a nine-stage pipeline that turns iPhone video into VR-ready Gaussian splats, connecting SwiftUI, FastAPI, COLMAP, FastGS, and Unity.',
+      'Brought reconstruction time under two minutes by streamlining frame extraction, sparse reconstruction, training, and Unity prefab generation.',
+    ],
   },
   {
     title: "Hold’em AI",
@@ -15,6 +19,11 @@ const projects = [
     stack: 'NUMPY / REACT / FLASK',
     href: 'https://github.com/LargoLardo/lard_plays_poker',
     image: '/poker.png',
+    highlights: [
+      'Built a heads-up no-limit Texas Hold’em solver using external-sampling MCCFR with regret matching, training a policy that won more than 10 big blinds per hour against basic heuristics.',
+      'Used Monte Carlo equity and potential calculations to group similar hands, reaching roughly 80% similarity to known solvers.',
+      'Made training more than 10 times faster on an eight-core CPU with a multiprocessing chunk-and-merge pipeline.',
+    ],
   },
   {
     title: 'Chess Engine',
@@ -22,6 +31,10 @@ const projects = [
     stack: 'PYTORCH / MCTS / VITE',
     href: 'https://github.com/LargoLardo/lard_plays_chess',
     image: '/chess.png',
+    highlights: [
+      'Built a hybrid reinforcement- and supervised-learning chess engine from scratch, pairing a policy/value network with MCTS/PUCT search to reach expert-level 2000 Elo strength through self-play.',
+      'Improved runtime search speed by more than eight times using lazy inference batching, transposition tables, and cached board encodings for deeper searches within a fixed time budget.',
+    ],
   },
 ]
 
@@ -69,6 +82,13 @@ function LifeCanvas({ running, boardRef }) {
       canvas.style.width = `${innerWidth}px`
       canvas.style.height = `${innerHeight}px`
       context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+      const gradient = context.createRadialGradient(
+        innerWidth / 2, innerHeight / 2, 0,
+        innerWidth / 2, innerHeight / 2, Math.hypot(innerWidth, innerHeight) / 2,
+      )
+      gradient.addColorStop(0.34, '#3f5f50')
+      gradient.addColorStop(1, '#7bd88f')
+      context.fillStyle = gradient
     }
 
     const draw = (time = 0) => {
@@ -79,7 +99,6 @@ function LifeCanvas({ running, boardRef }) {
         lastStep = time
       }
       context.clearRect(0, 0, innerWidth, innerHeight)
-      context.fillStyle = '#3f5f50'
       for (let i = 0; i < state.cells.length; i += 1) {
         if (!state.cells[i]) continue
         const x = (i % state.columns) * state.cellSize
@@ -126,9 +145,18 @@ function LifeCanvas({ running, boardRef }) {
 
 export default function MinimalPortfolio() {
   const [running, setRunning] = useState(true)
+  const [activeProject, setActiveProject] = useState(null)
   const boardRef = useRef(null)
   const pageRef = useRef(null)
   const cardRef = useRef(null)
+  const projectDialogRef = useRef(null)
+
+  useEffect(() => {
+    if (activeProject) {
+      projectDialogRef.current.showModal()
+      projectDialogRef.current.scrollTop = 0
+    }
+  }, [activeProject])
 
   useEffect(() => {
     const page = pageRef.current
@@ -218,16 +246,22 @@ export default function MinimalPortfolio() {
 
         <div className="section-row" data-scroll-layer>
           <h2>PROJECTS</h2>
-          <div className="entries">
-            {projects.map((project, index) => (
-              <a key={project.title} href={project.href} target="_blank" rel="noreferrer" className="entry project">
-                {project.image
-                  ? <img className="project-image" src={project.image} alt={`${project.title} preview`} loading="lazy" decoding="async" />
-                  : <div className="project-placeholder" aria-label={`${project.title} image placeholder`}>PROJECT IMAGE / 0{index + 1}</div>}
-                <div className="entry-heading"><h3>{project.title}</h3><span aria-hidden="true">↗</span></div>
-                <p>{project.detail}</p>
-                <small>{project.stack}</small>
-              </a>
+          <div className="entries project-grid">
+            {projects.map((project) => (
+              <button
+                key={project.title}
+                type="button"
+                className="entry project"
+                aria-haspopup="dialog"
+                aria-controls="project-dialog"
+                onClick={() => setActiveProject(project)}
+              >
+                <img className="project-image" src={project.image} alt="" loading="lazy" decoding="async" />
+                <span className="project-caption">
+                  <span className="project-title">{project.title}<span aria-hidden="true">+</span></span>
+                  <span className="project-detail">{project.detail}</span>
+                </span>
+              </button>
             ))}
           </div>
         </div>
@@ -242,6 +276,38 @@ export default function MinimalPortfolio() {
           </div>
         </div>
       </section>
+
+      <dialog
+        id="project-dialog"
+        ref={projectDialogRef}
+        className="project-dialog"
+        aria-labelledby="project-dialog-title"
+        aria-describedby="project-dialog-summary"
+        onClose={() => setActiveProject(null)}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close()
+        }}
+      >
+        {activeProject && (
+          <div className="project-dialog-content">
+            <header className="project-dialog-header">
+              <div>
+                <h2 id="project-dialog-title">{activeProject.title}</h2>
+                <p id="project-dialog-summary">{activeProject.detail}</p>
+              </div>
+              <button type="button" className="project-dialog-close" aria-label="Close project details" onClick={() => projectDialogRef.current.close()}>×</button>
+            </header>
+            <div className="project-dialog-body">
+              <img className="project-dialog-image" src={activeProject.image} alt={`${activeProject.title} preview`} />
+              <h3>What I built</h3>
+              {activeProject.highlights.map((highlight) => <p key={highlight}>{highlight}</p>)}
+              <h3>Built with</h3>
+              <p className="project-stack">{activeProject.stack}</p>
+              <a className="project-source" href={activeProject.href} target="_blank" rel="noreferrer">View on GitHub <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
+        )}
+      </dialog>
 
       <div className="life-controls" aria-label="Game of Life controls">
         <button
