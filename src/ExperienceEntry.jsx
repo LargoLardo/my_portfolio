@@ -26,6 +26,7 @@ function TerminalDescription({ text }) {
 
 function ExperienceEntry({ item, onBurst }) {
   const [expanded, setExpanded] = useState(false)
+  const [showDescription, setShowDescription] = useState(false)
   const descriptionId = useId()
   return (
     <article className="entry job-entry" onPointerEnter={(event) => onBurst(item, event)} style={{ '--experience-color': item.color }}>
@@ -34,7 +35,15 @@ function ExperienceEntry({ item, onBurst }) {
         className="experience-toggle"
         aria-expanded={expanded}
         aria-controls={descriptionId}
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          if (expanded) {
+            setExpanded(false)
+            if (matchMedia('(prefers-reduced-motion: reduce)').matches) setShowDescription(false)
+          } else {
+            setShowDescription(true)
+            setExpanded(true)
+          }
+        }}
       >
         <img className="company-logo" src={item.logo} alt="" />
         <span className="entry-heading">
@@ -42,8 +51,15 @@ function ExperienceEntry({ item, onBurst }) {
           <time>{item.date}</time>
         </span>
       </button>
-      <div className={`experience-reveal${expanded ? ' is-expanded' : ''}`} id={descriptionId} aria-hidden={!expanded}>
-        <div>{expanded && <TerminalDescription text={item.detail} />}</div>
+      <div
+        className={`experience-reveal${expanded ? ' is-expanded' : ''}`}
+        id={descriptionId}
+        aria-hidden={!expanded}
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && event.propertyName === 'grid-template-rows' && !expanded) setShowDescription(false)
+        }}
+      >
+        <div>{showDescription && <TerminalDescription text={item.detail} />}</div>
       </div>
     </article>
   )
