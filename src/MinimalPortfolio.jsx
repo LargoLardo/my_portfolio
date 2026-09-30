@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { damp, nextGeneration } from './life.js'
+import ExperienceList from './ExperienceEntry.jsx'
 
 const projects = [
   {
@@ -57,6 +58,7 @@ const experience = [
     detail: 'Incoming F26.',
     logo: '/shopify-cropped.png',
     company: 'Shopify',
+    color: '#95bf47',
   },
   {
     title: 'Application Programmer',
@@ -64,6 +66,7 @@ const experience = [
     detail: 'Automated QA for 1,000+ Cognos BI reports per hour and built data workflows across Redshift, AWS Lambda, and Python.',
     logo: '/govicon-cropped.png',
     company: 'Ontario Government',
+    color: '#8fc43e',
   }
 ]
 
@@ -240,20 +243,7 @@ export default function MinimalPortfolio() {
 
         <div className="section-row" data-scroll-layer>
           <h2>EXPERIENCE</h2>
-          <div className="entries">
-            {experience.map((item) => (
-              <article className="entry job-entry" key={item.title}>
-                <img className="company-logo" src={item.logo} alt={`${item.company} logo`} />
-                <div>
-                  <div className="entry-heading">
-                    <div className="job-title"><h3>{item.title}</h3><span>{item.company}</span></div>
-                    <time>{item.date}</time>
-                  </div>
-                  <p>{item.detail}</p>
-                </div>
-              </article>
-            ))}
-          </div>
+          <ExperienceList items={experience} />
         </div>
 
         <div className="section-row" data-scroll-layer>
