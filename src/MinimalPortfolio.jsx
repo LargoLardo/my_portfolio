@@ -36,6 +36,18 @@ const projects = [
       'Improved runtime search speed by more than eight times using lazy inference batching, transposition tables, and cached board encodings for deeper searches within a fixed time budget.',
     ],
   },
+  {
+    title: 'Advolve',
+    detail: 'Evolving ad creatives with generative AI and predicted brain responses.',
+    stack: 'NEXT.JS / PYTORCH / CLOUDFLARE / BASETEN',
+    href: 'https://github.com/LargoLardo/advolve',
+    image: '/advolve.jpg',
+    highlights: [
+      'Built with a team at Hack the North 2026, Advolve turns a product image and brief into generations of ad creatives through selection, crossover, and mutation.',
+      'Uses TRIBE v2 to predict cortical responses and score candidates, guiding each round of creative evolution.',
+      'An interactive family tree tracks each ad’s ancestry, traits, and scores, backed by durable Cloudflare workflows and GPU inference on Baseten.',
+    ],
+  },
 ]
 
 const experience = [
