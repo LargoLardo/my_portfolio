@@ -84,6 +84,7 @@ function LifeCanvas({ running, boardRef }) {
     const context = canvas.getContext('2d')
     let frame
     let lastStep = 0
+    let lastDraw = 0
 
     const resize = () => {
       const cellSize = innerWidth < 700 ? 17 : 22
@@ -91,7 +92,7 @@ function LifeCanvas({ running, boardRef }) {
       const rows = Math.ceil(innerHeight / cellSize)
       const cells = new Uint8Array(columns * rows)
       for (let i = 0; i < cells.length; i += 1) cells[i] = Math.random() < 0.14 ? 1 : 0
-      boardRef.current = { cells, columns, rows, cellSize }
+      boardRef.current = { cells, levels: Float32Array.from(cells), columns, rows, cellSize }
       canvas.width = innerWidth * devicePixelRatio
       canvas.height = innerHeight * devicePixelRatio
       canvas.style.width = `${innerWidth}px`
@@ -109,17 +110,23 @@ function LifeCanvas({ running, boardRef }) {
     const draw = (time = 0) => {
       const state = boardRef.current
       if (!state) return
+      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
+      lastDraw = time
       if (runningRef.current && time - lastStep > 130) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
       context.clearRect(0, 0, innerWidth, innerHeight)
       for (let i = 0; i < state.cells.length; i += 1) {
-        if (!state.cells[i]) continue
+        const level = damp(state.levels[i], state.cells[i], fade)
+        state.levels[i] = level
+        if (level < 0.01) continue
         const x = (i % state.columns) * state.cellSize
         const y = Math.floor(i / state.columns) * state.cellSize
+        context.globalAlpha = level
         context.fillRect(x + 1, y + 1, state.cellSize - 2, state.cellSize - 2)
       }
+      context.globalAlpha = 1
       frame = requestAnimationFrame(draw)
     }
 
