@@ -13,8 +13,7 @@ const CAMPFIRE_RADIUS = 1.05
 const EYE_HEIGHT = 1.54
 const UP = new THREE.Vector3(0, 1, 0)
 const RECORD_TRACK_CONFIG_URL = '/record-player-tracks.json'
-const CONTROLS_HINT_DURATION_MS = 30000
-const SCOPE_IDLE_REMINDER_MS = 30000
+const CONTROLS_HINT_DURATION_MS = 8000
 const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
 const SCOPE_AUTO_OPEN_DURATION = 1
@@ -271,6 +270,53 @@ function makeWoodBumpTexture(seed = 1, width = 512, height = 128) {
   return canvas
 }
 
+function makeCarvedWoodTexture() {
+  const canvas = makeWoodGrainTexture(719, 1024, 384)
+  const ctx = canvas.getContext('2d')
+  const rand = seededRandom(512)
+  // Uneven knife strokes leave dark cuts with a thin edge of exposed wood.
+  const letters = {
+    L: [[[0, 0], [0, 1], [0.7, 1]]],
+    O: [[[0.1, 0], [0.65, 0.04], [0.72, 0.9], [0.1, 1], [0, 0.1], [0.1, 0]]],
+    K: [[[0, 0], [0, 1]], [[0.7, 0], [0.04, 0.5], [0.72, 1]]],
+    U: [[[0, 0], [0.03, 0.94], [0.65, 1], [0.7, 0]]],
+    P: [[[0, 1], [0, 0], [0.66, 0.03], [0.67, 0.46], [0, 0.48]]],
+    H: [[[0, 0], [0, 1]], [[0.7, 0], [0.7, 1]], [[0, 0.5], [0.7, 0.5]]],
+    D: [[[0, 1], [0, 0], [0.5, 0.05], [0.7, 0.28], [0.68, 0.8], [0.45, 1], [0, 1]]],
+    S: [[[0.7, 0.04], [0.08, 0], [0, 0.43], [0.7, 0.56], [0.64, 1], [0, 0.94]]],
+    A: [[[0, 1], [0.34, 0], [0.72, 1]], [[0.15, 0.6], [0.57, 0.6]]],
+    C: [[[0.7, 0.07], [0.1, 0], [0, 0.88], [0.65, 1]]],
+    E: [[[0.7, 0], [0, 0], [0, 1], [0.7, 1]], [[0, 0.5], [0.57, 0.5]]],
+  }
+  const carve = (text, x, y, size) => {
+    for (const letter of text) {
+      for (const stroke of letters[letter] ?? []) {
+        const points = stroke.map(([px, py]) => [x + px * size + rand() * 3, y + py * size + rand() * 3])
+        for (let pass = 0; pass < 3; pass += 1) {
+          ctx.strokeStyle = ['#29170dcc', '#bc956a', '#dfb58199'][pass]
+          ctx.lineWidth = [size * 0.095, size * 0.038, size * 0.012][pass]
+          ctx.beginPath()
+          points.forEach(([px, py], i) => i ? ctx.lineTo(px + pass, py + pass) : ctx.moveTo(px + pass, py + pass))
+          ctx.stroke()
+        }
+      }
+      x += size * (letter === ' ' ? 0.55 : 0.95)
+    }
+  }
+  carve('LOOK UP', 85, 62, 140)
+  carve('HOLD SPACE', 225, 278, 62)
+  for (let i = 0; i < 85; i += 1) {
+    const x = rand() * 1024, y = rand() * 384
+    ctx.strokeStyle = rand() > 0.5 ? '#cfb48d22' : '#20110855'
+    ctx.lineWidth = 0.5 + rand() * 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + 8 + rand() * 115, y + (rand() - 0.5) * 6)
+    ctx.stroke()
+  }
+  return canvas
+}
+
 function createWoodMaterial(seed, color, repeatX = 2.2, repeatY = 1) {
   const map = new THREE.CanvasTexture(makeWoodGrainTexture(seed))
   const bumpMap = new THREE.CanvasTexture(makeWoodBumpTexture(seed))
@@ -429,7 +475,7 @@ function Panel({ discovery, onClose }) {
   )
 }
 
-function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
+function PortfolioSidebar({ open, activeId, onSelect, onClose, children }) {
   const closeRef = useRef(null)
   useEffect(() => {
     if (open) closeRef.current?.focus({ preventScroll: true })
@@ -475,6 +521,7 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
           </div>
         ))}
       </div>
+      {children}
     </aside>
   )
 }
@@ -482,7 +529,6 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
 export default function App() {
   const mountRef = useRef(null)
   const directoryButtonRef = useRef(null)
-  const helpButtonRef = useRef(null)
   const helpCloseRef = useRef(null)
   const cursorRef = useRef(null)
   const scopeActiveRef = useRef(false)
@@ -499,7 +545,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [ignited, setIgnited] = useState(false)
   const [controlsVisible, setControlsVisible] = useState(true)
-  const [scopeUseCount, setScopeUseCount] = useState(0)
   const [readSignAvailable, setReadSignAvailable] = useState(false)
   const readSignAvailableRef = useRef(false)
   const [signPanelOpen, setSignPanelOpen] = useState(false)
@@ -527,7 +572,6 @@ export default function App() {
     }
     if (value) {
       setControlsVisible(false)
-      setScopeUseCount((count) => count + 1)
     }
   }, [])
 
@@ -572,16 +616,6 @@ export default function App() {
 
     return () => window.clearTimeout(hideTimer)
   }, [controlsVisible, ignited])
-
-  useEffect(() => {
-    if (!ignited || controlsVisible || scopeActiveState) return undefined
-
-    const reminderTimer = window.setTimeout(() => {
-      setControlsVisible(true)
-    }, SCOPE_IDLE_REMINDER_MS)
-
-    return () => window.clearTimeout(reminderTimer)
-  }, [controlsVisible, ignited, scopeActiveState, scopeUseCount])
 
   useEffect(() => {
     const cursor = cursorRef.current
@@ -818,8 +852,8 @@ export default function App() {
     signGroup.rotation.y = 0.18
     scene.add(signGroup)
 
-    const signMetal = new THREE.MeshStandardMaterial({ color: 0x343d3b, roughness: 0.72, metalness: 0.45 })
-    const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, 1.15, 16), signMetal)
+    const signWood = createWoodMaterial(716, 0xb8a38b, 1, 1)
+    const signPost = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.085), signWood)
     signPost.position.set(0, 0.5, -0.09)
     signPost.castShadow = true
     signGroup.add(signPost)
@@ -828,56 +862,62 @@ export default function App() {
     signBoardGroup.position.set(0, 1, 0)
     signBoardGroup.rotation.z = -0.04
     signGroup.add(signBoardGroup)
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 0.08), signMetal)
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 0.12), signWood)
     housing.castShadow = true
     housing.receiveShadow = true
     signBoardGroup.add(housing)
 
-    const label = document.createElement('canvas')
-    label.width = 1024
-    label.height = 384
-    const labelContext = label.getContext('2d')
-    labelContext.fillStyle = '#c9c7b4'
-    labelContext.fillRect(0, 0, 1024, 384)
-    labelContext.fillStyle = '#aa6338'
-    labelContext.fillRect(0, 0, 20, 384)
-    labelContext.fillStyle = '#363e39'
-    labelContext.font = '24px monospace'
-    labelContext.fillText('FIELD STATION 01 / EXPLORER GUIDE', 64, 65)
-    labelContext.fillRect(64, 90, 890, 2)
-    labelContext.font = 'bold 104px sans-serif'
-    labelContext.fillText('LOOK UP.', 58, 217)
-    labelContext.font = '28px monospace'
-    labelContext.fillText('HOLD SPACE TO SCAN', 64, 302)
-    labelContext.font = '18px monospace'
-    labelContext.fillText('DRAG TO LOOK / WASD TO EXPLORE', 64, 345)
+    const label = makeCarvedWoodTexture()
     const labelTexture = new THREE.CanvasTexture(label)
     labelTexture.colorSpace = THREE.SRGBColorSpace
     labelTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     const signInteractionMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.68, 0.63),
-      new THREE.MeshStandardMaterial({ map: labelTexture, roughness: 0.85, metalness: 0.1 }),
+      new THREE.PlaneGeometry(1.76, 0.69),
+      new THREE.MeshStandardMaterial({ map: labelTexture, bumpMap: labelTexture, bumpScale: 0.012, roughness: 1 }),
     )
     signInteractionMesh.geometry.computeBoundingBox()
-    signInteractionMesh.position.z = 0.045
+    signInteractionMesh.position.z = 0.061
     signBoardGroup.add(signInteractionMesh)
-    const boltGeometry = new THREE.SphereGeometry(0.022, 8, 6)
-    for (const x of [-0.85, 0.85]) {
-      for (const y of [-0.31, 0.31]) {
-        const bolt = new THREE.Mesh(boltGeometry, signMetal)
-        bolt.position.set(x, y, 0.045)
-        signBoardGroup.add(bolt)
-      }
-    }
-
     const recordX = 1.7
     const recordZ = -1.6
     const recordPlayer = new THREE.Group()
-    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) + 0.02, recordZ)
+    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.09, recordZ)
     const toSpawn = new THREE.Vector3(-recordX, 0, 4.15 - recordZ).normalize()
     recordPlayer.rotation.y = Math.atan2(-toSpawn.x, -toSpawn.z) - Math.PI / 6
-    recordPlayer.rotation.x = 0
+    recordPlayer.rotation.x = -0.13
+    recordPlayer.rotation.z = 0.14
     scene.add(recordPlayer)
+
+    // A low, irregular drift covers the cabinet; scattered rubble softens the join.
+    const driftGeometry = new THREE.PlaneGeometry(2.1, 1.75, 28, 24)
+    const driftPositions = driftGeometry.attributes.position
+    for (let i = 0; i < driftPositions.count; i += 1) {
+      const x = driftPositions.getX(i), z = -driftPositions.getY(i)
+      const edge = Math.max(0, 1 - (x / 1.05) ** 2) * Math.max(0, 1 - (z / 0.875) ** 2)
+      const pile = edge * (0.13 + Math.sin(x * 9 + z * 5) * 0.025)
+      driftPositions.setZ(i, terrainHeight(recordX + x, recordZ + z) + pile + 0.004)
+    }
+    driftGeometry.computeVertexNormals()
+    const drift = new THREE.Mesh(driftGeometry, dirtMaterial)
+    drift.rotation.x = -Math.PI / 2
+    drift.position.set(recordX, 0, recordZ)
+    drift.receiveShadow = true
+    scene.add(drift)
+    const rubbleRand = seededRandom(145)
+    for (let i = 0; i < 28; i += 1) {
+      const angle = rubbleRand() * Math.PI * 2
+      const radius = 0.32 + rubbleRand() * 0.68
+      const x = recordX + Math.cos(angle) * radius
+      const z = recordZ + Math.sin(angle) * radius * 0.8
+      const stone = new THREE.Mesh(rockGeometry, rockMaterial)
+      const scale = 0.1 + rubbleRand() ** 2 * 0.6
+      stone.scale.set(scale * 1.3, scale * 0.6, scale)
+      stone.position.set(x, terrainHeight(x, z) + scale * 0.09 + Math.max(0, 0.15 - radius * 0.13), z)
+      stone.rotation.set(rubbleRand(), rubbleRand() * 6, rubbleRand())
+      stone.castShadow = stone.receiveShadow = true
+      scene.add(stone)
+    }
+
 
     const recordInteractionMesh = new THREE.Mesh(
       new THREE.BoxGeometry(1.45, 1.55, 1.35),
@@ -929,7 +969,8 @@ export default function App() {
             material.map.colorSpace = THREE.SRGBColorSpace
             material.map.anisotropy = 4
           }
-          material.roughness = Math.max(material.roughness ?? 0.4, 0.56)
+          material.roughness = 0.94
+          material.color.set(0x817567)
           material.metalness = material.metalness ?? 0
         })
       })
@@ -943,7 +984,7 @@ export default function App() {
         object.geometry = mergeVertices(geometry)
         object.geometry.computeVertexNormals()
         geometry.dispose()
-        object.material = new THREE.MeshStandardMaterial({ color: 0xb49a62, roughness: 0.4, metalness: 0.42, side: THREE.DoubleSide })
+        object.material = new THREE.MeshStandardMaterial({ color: 0x736749, roughness: 0.8, metalness: 0.2, side: THREE.DoubleSide })
       })
 
       recordPlayer.add(phonograph)
@@ -1865,14 +1906,6 @@ export default function App() {
         <span className="reticle-prompt">{cursorPrompt}</span>
       </div>
 
-      <header className="hud-brand">
-        <a href="/" aria-label="Return to Logan Zhao's main portfolio">
-          <span className="expedition-mark" aria-hidden="true">LZ</span>
-          <span><small>AN EXPLORER'S PORTFOLIO</small><strong>Logan Zhao</strong></span>
-          <span className="return-arrow" aria-hidden="true">↗</span>
-        </a>
-      </header>
-
       <nav className="hud-actions" aria-label="Exploration tools">
         <button
           ref={directoryButtonRef}
@@ -1887,7 +1920,7 @@ export default function App() {
             setSidebarOpen((open) => !open)
           }}
         >
-          <span aria-hidden="true">☷</span> Field log <small>08</small>
+          Field log <span aria-hidden="true">↗</span>
         </button>
 
         <button
@@ -1899,23 +1932,6 @@ export default function App() {
           <span className="scope-icon" aria-hidden="true" /> Signalscope
         </button>
       </nav>
-
-      <button ref={helpButtonRef} className="help-button" type="button" aria-label="Show exploration controls" aria-expanded={signPanelOpen} aria-controls="explorer-guide" onClick={() => setSignPanelOpen((open) => !open)}>?</button>
-
-      <button
-        className="audio-button"
-        type="button"
-        aria-pressed={audioMuted}
-        aria-label={audioMuted ? 'Unmute music' : 'Mute music'}
-        onClick={toggleAudioMuted}
-      >
-        <span className="sound-icon" aria-hidden="true">
-          <span className="sound-icon-speaker" />
-          <span className="sound-icon-wave sound-icon-wave-one" />
-          <span className="sound-icon-wave sound-icon-wave-two" />
-          <span className="sound-icon-slash" />
-        </span>
-      </button>
 
       <div className="scope-overlay" aria-hidden="true">
         <div className="scope-ring" />
@@ -1932,14 +1948,13 @@ export default function App() {
       )}
 
       <div className={`controls-hud ${controlsVisible ? 'is-visible' : ''}`} aria-label="Controls">
-        <p>FIELD STATION 01 <span> / </span> LOOK UP. STAY CURIOUS.</p>
         <div><span><kbd>DRAG</kbd> look around</span><span className="desktop-control"><kbd>W A S D</kbd> explore</span><span className="desktop-control"><kbd>SPACE</kbd> hold to scan</span><span className="touch-control">Tap Signalscope to scan a planet</span></div>
       </div>
 
       <aside id="explorer-guide" className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Explorer guide" aria-hidden={!signPanelOpen} inert={!signPanelOpen}>
         <button ref={helpCloseRef} className="sign-help-close" type="button" onClick={() => {
           setSignPanelOpen(false)
-          helpButtonRef.current?.focus({ preventScroll: true })
+          directoryButtonRef.current?.focus({ preventScroll: true })
         }} aria-label="Close sign">
           ×
         </button>
@@ -1959,7 +1974,18 @@ export default function App() {
           setSidebarOpen(false)
           directoryButtonRef.current?.focus({ preventScroll: true })
         }}
-      />
+      >
+        <div className="log-tools">
+          <button className="help-button" type="button" aria-controls="explorer-guide" onClick={() => {
+            setSidebarOpen(false)
+            setSignPanelOpen(true)
+          }}>Controls</button>
+          <button className="audio-button" type="button" aria-pressed={audioMuted} aria-label={audioMuted ? 'Unmute music' : 'Mute music'} onClick={toggleAudioMuted}>
+            Music {audioMuted ? 'off' : 'on'}
+          </button>
+          <a href="/">Back to portfolio ↗</a>
+        </div>
+      </PortfolioSidebar>
       <Panel discovery={activeData} onClose={() => setActiveDiscovery(null)} />
     </main>
   )
