@@ -20,6 +20,8 @@ const PHONOGRAPH_INTERACT_DISTANCE = 6.5
 const SCOPE_AUTO_OPEN_DURATION = 1.7
 const MUSIC_FADE_SECONDS = 5
 const UPLINK_MESSAGE = 'ESTABLISHING UPLINK'
+const RECORD_X = 1.7
+const RECORD_Z = -1.6
 
 const DEFAULT_RECORD_TRACKS = [
   {
@@ -205,7 +207,11 @@ function terrainHeight(x, z) {
   const h = ripples + ridge + hummocks + Math.sin(x * 0.73) * Math.cos(z * 0.51) * 0.16
 
   const campFlatten = 1 - smoothstep(1.2, 6.2, Math.sqrt(x * x + z * z))
-  return THREE.MathUtils.lerp(h, 0, campFlatten)
+  // Shape the phonograph's sandy drift into the same surface so its color and texture stay continuous.
+  const dx = x - RECORD_X, dz = z - RECORD_Z
+  const driftEdge = Math.max(0, 1 - (dx / 1.05) ** 2) * Math.max(0, 1 - (dz / 0.875) ** 2)
+  const drift = driftEdge * (0.13 + Math.sin(dx * 9 + dz * 5) * 0.025)
+  return THREE.MathUtils.lerp(h, 0, campFlatten) + drift
 }
 
 function makeWoodGrainTexture(seed = 1, width = 512, height = 128) {
@@ -284,7 +290,7 @@ function makeCarvedWoodTexture(text, seed) {
   weather.addColorStop(1, '#140e09bb')
   ctx.fillStyle = weather
   ctx.fillRect(0, 0, 1024, 256)
-  // Irregular gouges expose raw wood along one lip, with a dark recessed center.
+  // Uneven yellow strokes follow the scratched lettering across each plank.
   const letters = {
     L: [[[0, 0], [0, 1], [0.7, 1]]],
     O: [[[0.1, 0], [0.65, 0.04], [0.72, 0.9], [0.1, 1], [0, 0.1], [0.1, 0]]],
@@ -309,7 +315,7 @@ function makeCarvedWoodTexture(text, seed) {
           const length = Math.hypot(bx - ax, by - ay)
           const nx = -(by - ay) / length, ny = (bx - ax) / length
           const width = size * (0.035 + rand() * 0.021)
-          ctx.fillStyle = '#d0aa74'
+          ctx.fillStyle = '#ffe36a'
           ctx.beginPath()
           ctx.moveTo(ax - nx * width, ay - ny * width)
           ctx.lineTo((ax + bx) * 0.5 - nx * width * 1.6, (ay + by) * 0.5 - ny * width * 1.6)
@@ -318,7 +324,7 @@ function makeCarvedWoodTexture(text, seed) {
           ctx.lineTo(ax + nx * width * 0.6, ay + ny * width * 0.6)
           ctx.closePath()
           ctx.fill()
-          ctx.strokeStyle = '#28180ef0'
+          ctx.strokeStyle = '#ffe36a'
           ctx.lineWidth = width * 1.25
           ctx.beginPath()
           ctx.moveTo(ax, ay)
@@ -326,7 +332,7 @@ function makeCarvedWoodTexture(text, seed) {
           ctx.lineTo(bx, by)
           ctx.stroke()
           // Fine overshoots and splinters avoid the look of printed lettering.
-          ctx.strokeStyle = '#dab98280'
+          ctx.strokeStyle = '#ffe78bba'
           ctx.lineWidth = 0.9
           ctx.beginPath()
           ctx.moveTo(ax - nx * width, ay - ny * width)
@@ -1039,31 +1045,16 @@ export default function App() {
     )
     signInteractionMesh.geometry.computeBoundingBox()
     signBoardGroup.add(signInteractionMesh)
-    const recordX = 1.7
-    const recordZ = -1.6
+    const recordX = RECORD_X
+    const recordZ = RECORD_Z
     const recordPlayer = new THREE.Group()
-    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.09, recordZ)
+    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.22, recordZ)
     const toSpawn = new THREE.Vector3(-recordX, 0, 4.15 - recordZ).normalize()
     recordPlayer.rotation.y = Math.atan2(-toSpawn.x, -toSpawn.z) - Math.PI / 6
     recordPlayer.rotation.x = -0.13
     recordPlayer.rotation.z = 0.14
     scene.add(recordPlayer)
 
-    // A low, irregular drift covers the cabinet; scattered rubble softens the join.
-    const driftGeometry = new THREE.PlaneGeometry(2.1, 1.75, 28, 24)
-    const driftPositions = driftGeometry.attributes.position
-    for (let i = 0; i < driftPositions.count; i += 1) {
-      const x = driftPositions.getX(i), z = -driftPositions.getY(i)
-      const edge = Math.max(0, 1 - (x / 1.05) ** 2) * Math.max(0, 1 - (z / 0.875) ** 2)
-      const pile = edge * (0.13 + Math.sin(x * 9 + z * 5) * 0.025)
-      driftPositions.setZ(i, terrainHeight(recordX + x, recordZ + z) + pile + 0.004)
-    }
-    driftGeometry.computeVertexNormals()
-    const drift = new THREE.Mesh(driftGeometry, dirtMaterial)
-    drift.rotation.x = -Math.PI / 2
-    drift.position.set(recordX, 0, recordZ)
-    drift.receiveShadow = true
-    scene.add(drift)
     const rubbleRand = seededRandom(145)
     for (let i = 0; i < 28; i += 1) {
       const angle = rubbleRand() * Math.PI * 2
@@ -1073,7 +1064,7 @@ export default function App() {
       const stone = new THREE.Mesh(rockGeometry, rockMaterial)
       const scale = 0.1 + rubbleRand() ** 2 * 0.6
       stone.scale.set(scale * 1.3, scale * 0.6, scale)
-      stone.position.set(x, terrainHeight(x, z) + scale * 0.09 + Math.max(0, 0.15 - radius * 0.13), z)
+      stone.position.set(x, terrainHeight(x, z) + scale * 0.09, z)
       stone.rotation.set(rubbleRand(), rubbleRand() * 6, rubbleRand())
       stone.castShadow = stone.receiveShadow = true
       scene.add(stone)
