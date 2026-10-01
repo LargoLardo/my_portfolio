@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
 import { makeDirtTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { createComet } from './spaceComet.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
@@ -130,7 +131,7 @@ const DISCOVERIES = [
     hex: 0x31558f,
     position: [4, 66, -78],
     radius: 2.2,
-    palette: ['#030815', '#0c1b36', '#193858', '#466588'],
+    palette: ['#030815', '#17345c', '#285488', '#6e92ad'],
     planetStyle: { rings: true, ringTilt: 0.78 },
     body: [
       'Built and supported automated QA tooling for Cognos BI reports using the IBM Cognos API and Playwright, helping validate 1,000+ reports per hour and protect reporting integrity.',
@@ -798,6 +799,8 @@ export default function App() {
       }),
     )
     scene.add(anchorStars)
+    const comet = createComet(particleTexture)
+    scene.add(comet.group)
 
     const campfire = new THREE.Group()
     scene.add(campfire)
@@ -1165,6 +1168,16 @@ export default function App() {
           fog: false,
         }),
       )
+      // The scope gathers light from the day side without brightening the campsite.
+      planet.material.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal;')
+          .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvPlanetNormal = normalize(mat3(modelMatrix) * objectNormal);')
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal;')
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+            totalEmissiveRadiance *= 0.06 + 0.94 * max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);`)
+      }
       planet.position.set(...discovery.position)
       planet.userData.discoveryId = discovery.id
       planet.userData.discovered = discoveredIdsRef.current.has(discovery.id)
@@ -1746,6 +1759,7 @@ export default function App() {
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
+      comet.update(elapsed, dt, camera, reducedMotion)
 
       while (discoveryEventsRef.current.length > 0) {
         const event = discoveryEventsRef.current.shift()
@@ -1824,7 +1838,7 @@ export default function App() {
         const brightness = scopeAmount ? 1.7 : 0.26
         planetTint.setRGB(brightness, brightness, brightness)
         planet.material.color.lerp(planetTint, blend)
-        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, scopeAmount ? 0.045 : 0.002, blend)
+        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, scopeAmount ? 0.8 : 0.002, blend)
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
