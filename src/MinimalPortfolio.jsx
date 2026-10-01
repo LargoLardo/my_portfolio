@@ -58,7 +58,6 @@ const experience = [
     detail: 'Incoming F26.',
     logo: '/shopify-cropped.png',
     company: 'Shopify',
-    color: '#95bf47',
   },
   {
     title: 'Application Programmer',
@@ -66,7 +65,6 @@ const experience = [
     detail: 'Automated QA for 1,000+ Cognos BI reports per hour and built data workflows across Redshift, AWS Lambda, and Python.',
     logo: '/govicon-cropped.png',
     company: 'Ontario Government',
-    color: '#8fc43e',
   }
 ]
 
@@ -92,7 +90,14 @@ function LifeCanvas({ running, boardRef }) {
       const rows = Math.ceil(innerHeight / cellSize)
       const cells = new Uint8Array(columns * rows)
       for (let i = 0; i < cells.length; i += 1) cells[i] = Math.random() < 0.14 ? 1 : 0
-      boardRef.current = { cells, levels: Float32Array.from(cells), columns, rows, cellSize }
+      const opacity = Float32Array.from(cells, (_, i) => {
+        const x = ((i % columns + 0.5) * cellSize - innerWidth / 2) / (innerWidth / 2)
+        const y = ((Math.floor(i / columns) + 0.5) * cellSize - innerHeight / 2) / (innerHeight / 2)
+        const distance = Math.hypot(x, y)
+        const amount = Math.min(1, Math.max(0, (distance - 0.35) / 0.65))
+        return 0.55 + 0.45 * amount * amount * (3 - 2 * amount)
+      })
+      boardRef.current = { cells, levels: Float32Array.from(cells), opacity, columns, rows, cellSize }
       canvas.width = innerWidth * devicePixelRatio
       canvas.height = innerHeight * devicePixelRatio
       canvas.style.width = `${innerWidth}px`
@@ -102,8 +107,8 @@ function LifeCanvas({ running, boardRef }) {
         innerWidth / 2, innerHeight / 2, 0,
         innerWidth / 2, innerHeight / 2, Math.hypot(innerWidth, innerHeight) / 2,
       )
-      gradient.addColorStop(0.34, '#3f5f50')
-      gradient.addColorStop(1, '#7bd88f')
+      gradient.addColorStop(0.34, '#315f3d')
+      gradient.addColorStop(1, '#53d66f')
       context.fillStyle = gradient
     }
 
@@ -123,7 +128,7 @@ function LifeCanvas({ running, boardRef }) {
         if (level < 0.01) continue
         const x = (i % state.columns) * state.cellSize
         const y = Math.floor(i / state.columns) * state.cellSize
-        context.globalAlpha = level
+        context.globalAlpha = level * state.opacity[i]
         context.fillRect(x + 1, y + 1, state.cellSize - 2, state.cellSize - 2)
       }
       context.globalAlpha = 1

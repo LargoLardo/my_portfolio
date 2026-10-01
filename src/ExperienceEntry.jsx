@@ -1,5 +1,29 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
+function logoColor(image) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 32
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+  context.drawImage(image, 0, 0, 32, 32)
+  const pixels = context.getImageData(0, 0, 32, 32).data
+  let red = 0
+  let green = 0
+  let blue = 0
+  let weight = 0
+  for (let i = 0; i < pixels.length; i += 4) {
+    const [r, g, b, alpha] = pixels.slice(i, i + 4)
+    const saturation = Math.max(r, g, b) - Math.min(r, g, b)
+    if (alpha < 128 || saturation < 32) continue
+    const amount = alpha * saturation
+    red += r * amount
+    green += g * amount
+    blue += b * amount
+    weight += amount
+  }
+  return weight ? `rgb(${Math.round(red / weight)} ${Math.round(green / weight)} ${Math.round(blue / weight)})` : null
+}
+
 function TerminalDescription({ text }) {
   const [length, setLength] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? text.length : 0)
 
@@ -27,9 +51,10 @@ function TerminalDescription({ text }) {
 function ExperienceEntry({ item, onBurst }) {
   const [expanded, setExpanded] = useState(false)
   const [showDescription, setShowDescription] = useState(false)
+  const [color, setColor] = useState('#a7b3a8')
   const descriptionId = useId()
   return (
-    <article className="entry job-entry" onPointerEnter={(event) => onBurst(item, event)} style={{ '--experience-color': item.color }}>
+    <article className="entry job-entry" onPointerEnter={(event) => onBurst(color, event)} style={{ '--experience-color': color }}>
       <button
         type="button"
         className="experience-toggle"
@@ -45,7 +70,7 @@ function ExperienceEntry({ item, onBurst }) {
           }
         }}
       >
-        <img className="company-logo" src={item.logo} alt="" />
+        <img className="company-logo" src={item.logo} alt="" onLoad={(event) => setColor(logoColor(event.currentTarget) || color)} />
         <span className="entry-heading">
           <span className="job-title"><span className="job-role">{item.title}</span><span>{item.company}</span></span>
           <time>{item.date}</time>
@@ -140,7 +165,7 @@ export default function ExperienceList({ items }) {
       frame = requestAnimationFrame(draw)
     }
 
-    burstRef.current = (item, event) => {
+    burstRef.current = (color, event) => {
       if (event.pointerType === 'touch' || reducedMotion.matches) return
       const rect = canvas.getBoundingClientRect()
       const logo = event.currentTarget.querySelector('.company-logo').getBoundingClientRect()
@@ -148,7 +173,7 @@ export default function ExperienceList({ items }) {
       bursts.push({
         x: (logo.left + logo.width / 2 - rect.left) * scale,
         y: (logo.top + logo.height / 2 - rect.top) * scale,
-        color: item.color,
+        color,
         seed: Math.random() * 10000,
         started: performance.now(),
       })
@@ -168,7 +193,7 @@ export default function ExperienceList({ items }) {
   return (
     <div className="entries experience-list">
       <canvas className="experience-pixels" ref={canvasRef} aria-hidden="true" />
-      {items.map((item) => <ExperienceEntry key={item.company} item={item} onBurst={(item, event) => burstRef.current?.(item, event)} />)}
+      {items.map((item) => <ExperienceEntry key={item.company} item={item} onBurst={(color, event) => burstRef.current?.(color, event)} />)}
     </div>
   )
 }
