@@ -370,6 +370,12 @@ canvas {
   mask-image: repeating-linear-gradient(to bottom, #000 0 4px, #000c 4px 6px);
 }
 
+.title-letter { display: inline-block; }
+
+@media (hover: hover) {
+  .title-letter:hover { opacity: 0.5; }
+}
+
 .intro {
   max-width: none;
   margin: 20px 0 32px;
@@ -511,8 +517,12 @@ canvas {
 
 .experience-reveal.is-expanded { grid-template-rows: 1fr; opacity: 1; }
 .experience-reveal > div { overflow: hidden; min-height: 0; }
-.entry .experience-description { display: grid; margin: 6px 0 12px; }
-.experience-description > span { grid-area: 1 / 1; }
+.entry .experience-description { margin: 6px 0 12px; padding-left: 1.4em; color: #8d9290; font-size: 24px; line-height: 1.55; }
+.experience-description li { margin-bottom: 0.4em; }
+.experience-description li::marker { color: var(--experience-color); }
+.experience-description li.is-pending::marker { color: transparent; }
+.experience-description-line { display: grid; }
+.experience-description-line > span { grid-area: 1 / 1; }
 .experience-description-accessible { color: transparent; user-select: none; pointer-events: none; }
 .terminal-cursor { color: var(--experience-color); animation: terminal-blink 500ms step-end infinite; opacity: 0; }
 @keyframes terminal-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }

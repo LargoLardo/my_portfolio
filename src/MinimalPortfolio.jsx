@@ -55,14 +55,21 @@ const experience = [
   {
     title: 'Software Engineer',
     date: 'September 2026 — December 2026',
-    detail: 'Incoming F26.',
+    detail: [
+      'Built Ruby on Rails and SQL tools for merchant verification, data repair, and onboarding safeguards.',
+      'Created PayPal remediation workflows on Shopify’s Payments and Onboarding team.',
+    ],
     logo: '/shopify-cropped.png',
     company: 'Shopify',
   },
   {
     title: 'Application Programmer',
     date: 'January 2026 — May 2026',
-    detail: 'Automated QA for 1,000+ Cognos BI reports per hour and built data workflows across Redshift, AWS Lambda, and Python.',
+    detail: [
+      'Co-developed a QA app with a team of 4 using the IBM Cognos API and Playwright; it validates 3,000+ reports/hour and protects database integrity.',
+      'Built a Redshift star schema with SQL in DBeaver, helping organize 50,000+ reports.',
+      'Supported AWS Lambda ETL of Cognos audit logs into Redshift for BI monitoring.',
+    ],
     logo: '/govicon-cropped.png',
     company: 'Ontario Government',
   }
@@ -228,7 +235,11 @@ export default function MinimalPortfolio() {
       <section className="portfolio-card" ref={cardRef}>
         <header data-scroll-layer>
           <div className="title-row">
-            <h1>Logan Zhao</h1>
+            <h1 aria-label="Logan Zhao">
+              {'Logan Zhao'.split('').map((letter, index) => letter === ' ' ? ' ' : (
+                <span className="title-letter" aria-hidden="true" key={index}>{letter}</span>
+              ))}
+            </h1>
             <a className="saturn-link" href="/current" aria-label="Enter Logan's immersive space portfolio">
               <span className="saturn-ring" />
               <span className="saturn-planet" />

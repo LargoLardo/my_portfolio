@@ -24,27 +24,37 @@ function logoColor(image) {
   return weight ? `rgb(${Math.round(red / weight)} ${Math.round(green / weight)} ${Math.round(blue / weight)})` : null
 }
 
-function TerminalDescription({ text }) {
-  const [length, setLength] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? text.length : 0)
+function TerminalDescription({ points }) {
+  const totalLength = points.reduce((sum, point) => sum + point.length, 0)
+  const [length, setLength] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? totalLength : 0)
 
   useEffect(() => {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const start = performance.now()
     let frame
     const type = (now) => {
-      const next = Math.min(text.length, Math.floor((now - start) / 12))
+      const next = Math.min(totalLength, Math.floor((now - start) / 4))
       setLength(next)
-      if (next < text.length) frame = requestAnimationFrame(type)
+      if (next < totalLength) frame = requestAnimationFrame(type)
     }
     frame = requestAnimationFrame(type)
     return () => cancelAnimationFrame(frame)
-  }, [text])
+  }, [totalLength])
 
   return (
-    <p className="experience-description">
-      <span className="experience-description-accessible">{text}</span>
-      <span aria-hidden="true">{text.slice(0, length)}{length < text.length && <span className="terminal-cursor">█</span>}</span>
-    </p>
+    <ul className="experience-description">
+      {points.map((point, index) => {
+        const start = points.slice(0, index).reduce((sum, previous) => sum + previous.length, 0)
+        return (
+          <li key={point} className={length < start ? 'is-pending' : undefined}>
+            <span className="experience-description-line">
+              <span className="experience-description-accessible">{point}</span>
+              <span aria-hidden="true">{point.slice(0, Math.max(0, length - start))}{length >= start && length < start + point.length && <span className="terminal-cursor">█</span>}</span>
+            </span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -84,7 +94,7 @@ function ExperienceEntry({ item, onBurst }) {
           if (event.target === event.currentTarget && event.propertyName === 'grid-template-rows' && !expanded) setShowDescription(false)
         }}
       >
-        <div>{showDescription && <TerminalDescription text={item.detail} />}</div>
+        <div>{showDescription && <TerminalDescription points={item.detail} />}</div>
       </div>
     </article>
   )
