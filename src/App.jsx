@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import './space.css'
 import { makeMoonTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
 import phonographSceneUrl from './assets/phonograph/scene.gltf?url'
 import phonographTextureUrl from './assets/phonograph/textures/Material_baseColor.png?url'
@@ -620,6 +621,10 @@ export default function App() {
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return undefined
+    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let reducedMotion = motionPreference.matches
+    const updateMotionPreference = () => { reducedMotion = motionPreference.matches }
+    motionPreference.addEventListener('change', updateMotionPreference)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -812,12 +817,13 @@ export default function App() {
     }
 
     const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x85817a, map: moonMaterial.map, bumpMap: moonMaterial.map, bumpScale: 0.025, roughness: 1 })
-    const stoneGeometry = new THREE.IcosahedronGeometry(0.18, 1)
+    const stoneGeometry = new THREE.IcosahedronGeometry(0.18, 2)
     for (let i = 0; i < 18; i += 1) {
       const angle = (i / 18) * Math.PI * 2
       const stone = new THREE.Mesh(stoneGeometry, stoneMaterial)
-      stone.position.set(Math.cos(angle) * 0.82, 0.11, Math.sin(angle) * 0.82)
-      stone.scale.set(1.1, 0.72, 0.92)
+      const radius = 0.8 + Math.sin(i * 7.1) * 0.035
+      stone.position.set(Math.cos(angle) * radius, 0.10, Math.sin(angle) * radius)
+      stone.scale.set(1.05 + Math.sin(i * 4.1) * 0.15, 0.68 + Math.sin(i * 2.3) * 0.12, 0.94)
       stone.rotation.set(angle * 0.7, angle, angle * 0.31)
       stone.castShadow = true
       stone.receiveShadow = true
@@ -833,7 +839,7 @@ export default function App() {
 
     const signMetal = new THREE.MeshStandardMaterial({ color: 0x343d3b, roughness: 0.72, metalness: 0.45 })
     const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, 1.15, 16), signMetal)
-    signPost.position.set(0, 0.5, 0)
+    signPost.position.set(0, 0.5, -0.09)
     signPost.castShadow = true
     signGroup.add(signPost)
 
@@ -945,6 +951,18 @@ export default function App() {
           material.roughness = Math.max(material.roughness ?? 0.4, 0.56)
           material.metalness = material.metalness ?? 0
         })
+      })
+
+      // Smooth the existing horn mesh and give its brass a restrained metal response.
+      phonograph.getObjectByName('horn_5')?.traverse((object) => {
+        if (!object.isMesh) return
+        const geometry = object.geometry
+        geometry.deleteAttribute('normal')
+        geometry.deleteAttribute('uv')
+        object.geometry = mergeVertices(geometry)
+        object.geometry.computeVertexNormals()
+        geometry.dispose()
+        object.material = new THREE.MeshStandardMaterial({ color: 0xb49a62, roughness: 0.4, metalness: 0.42, side: THREE.DoubleSide })
       })
 
       recordPlayer.add(phonograph)
@@ -1565,6 +1583,7 @@ export default function App() {
       const height = mount.clientHeight
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       renderer.setSize(width, height)
     }
 
@@ -1586,7 +1605,7 @@ export default function App() {
       const dt = Math.min(0.04, (time - lastTime) * 0.001)
       lastTime = time
       const ignition = smoothstep(0, 1.6, elapsed)
-      const firePulse = 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
+      const firePulse = reducedMotion ? 0.85 : 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
       ambient.intensity = 0.24 + ignition * 0.08
@@ -1595,13 +1614,13 @@ export default function App() {
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
 
       flameMeshes.forEach((flame, index) => {
-        flame.material.uniforms.time.value = elapsed + index * 11
+        flame.material.uniforms.time.value = (reducedMotion ? 0 : elapsed) + index * 11
         flame.material.uniforms.opacity.value = ignition * (0.66 - index * 0.12)
         flame.rotation.y = Math.atan2(camera.position.x, camera.position.z)
-        flame.scale.y = 0.94 + Math.sin(elapsed * 3.2 + index) * 0.06
+        flame.scale.y = reducedMotion ? 1 : 0.94 + Math.sin(elapsed * 3.2 + index) * 0.06
       })
 
-      if (recordDisc) {
+      if (recordDisc && !reducedMotion) {
         recordDisc.rotation.y += dt * 2.85
       }
 
@@ -1619,6 +1638,8 @@ export default function App() {
       }
 
       sparks.material.opacity = ignition * 0.88
+      sparks.visible = !reducedMotion
+      burstParticles.visible = !reducedMotion
       for (let i = 0; i < sparkCount; i += 1) {
         sparkAges[i] += dt
         if (sparkAges[i] >= sparkLifetimes[i]) {
@@ -1662,7 +1683,7 @@ export default function App() {
       }
 
       if (cameraPanTarget) {
-        const panEase = 1 - Math.exp(-dt * 2.8)
+        const panEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 2.8)
         const yawDelta = shortestAngleDelta(yaw, cameraPanTarget.yaw)
         yaw += yawDelta * panEase
         pitch = THREE.MathUtils.lerp(pitch, cameraPanTarget.pitch, panEase)
@@ -1674,7 +1695,7 @@ export default function App() {
         }
       }
 
-      const lookEase = 1 - Math.exp(-dt * 22)
+      const lookEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 22)
       viewYaw += shortestAngleDelta(viewYaw, yaw) * lookEase
       viewPitch = THREE.MathUtils.lerp(viewPitch, pitch, lookEase)
       camera.quaternion.setFromEuler(viewEuler.set(viewPitch, viewYaw, 0))
@@ -1696,7 +1717,9 @@ export default function App() {
         clampPlayer()
       }
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : 68, 1 - Math.exp(-dt * 9))
+      // Preserve enough horizontal view to include the camp and planets in portrait.
+      const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
+      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
       camera.updateProjectionMatrix()
 
       stars.position.copy(camera.position)
@@ -1779,7 +1802,7 @@ export default function App() {
         const brightness = planet.userData.discovered ? 1 : 0.82
         planetTint.setRGB(brightness, brightness, brightness)
         planet.material.color.lerp(planetTint, blend)
-        planet.rotation.y += dt * (0.012 + index * 0.002)
+        if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
         atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, 0.32 + Math.min(0.15, burstGlow * 0.06), blend)
@@ -1824,6 +1847,7 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('resize', resize)
+      motionPreference.removeEventListener('change', updateMotionPreference)
 
       if (mount.contains(renderer.domElement)) {
         mount.removeChild(renderer.domElement)
@@ -1865,30 +1889,30 @@ export default function App() {
       </header>
 
       <nav className="hud-actions" aria-label="Exploration tools">
-      <button
-        ref={directoryButtonRef}
-        className="sections-button"
-        type="button"
-        aria-controls="field-log"
-        aria-expanded={sidebarOpen}
-        onClick={() => {
-          setActiveDiscovery(null)
-          setSignPanelOpen(false)
-          setScopeActive(false)
-          setSidebarOpen((open) => !open)
-        }}
-      >
-        <span aria-hidden="true">☷</span> Field log <small>08</small>
-      </button>
+        <button
+          ref={directoryButtonRef}
+          className="sections-button"
+          type="button"
+          aria-controls="field-log"
+          aria-expanded={sidebarOpen}
+          onClick={() => {
+            setActiveDiscovery(null)
+            setSignPanelOpen(false)
+            setScopeActive(false)
+            setSidebarOpen((open) => !open)
+          }}
+        >
+          <span aria-hidden="true">☷</span> Field log <small>08</small>
+        </button>
 
-      <button
-        className="scope-button"
-        type="button"
-        aria-pressed={scopeActiveState}
-        onClick={() => setScopeActive(!scopeActiveState)}
-      >
-        <span className="scope-icon" aria-hidden="true" /> Signalscope
-      </button>
+        <button
+          className="scope-button"
+          type="button"
+          aria-pressed={scopeActiveState}
+          onClick={() => setScopeActive(!scopeActiveState)}
+        >
+          <span className="scope-icon" aria-hidden="true" /> Signalscope
+        </button>
       </nav>
 
       <button ref={helpButtonRef} className="help-button" type="button" aria-label="Show exploration controls" aria-expanded={signPanelOpen} aria-controls="explorer-guide" onClick={() => setSignPanelOpen((open) => !open)}>?</button>

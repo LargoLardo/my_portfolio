@@ -64,7 +64,7 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
       const turbulence = fractal(nx * 4 + seed, ny * 4, nz * 4, seed)
       const detail = fractal(nx * 22, ny * 22, nz * 22, seed + 7)
       let value = style.bands
-        ? 0.5 + Math.sin(ny * 42 + turbulence * 10) * 0.18 + Math.sin(ny * 105 + turbulence * 18) * 0.07 + (detail - 0.5) * 0.2
+        ? 0.26 + noise(ny * 16 + turbulence * 0.9, seed, 0, seed) * 0.5 + Math.sin(ny * 115 + turbulence * 6) * 0.025 + (detail - 0.5) * 0.12
         : THREE.MathUtils.clamp((turbulence - 0.28) * 1.9 + (detail - 0.5) * 0.16, 0, 1)
       if (!style.bands) value = THREE.MathUtils.lerp(value, 0.94, THREE.MathUtils.smoothstep(Math.abs(ny), 0.88, 0.99) * 0.65)
       const stop = THREE.MathUtils.clamp(value, 0, 0.999) * (colors.length - 1)
