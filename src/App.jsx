@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeMoonTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
@@ -39,7 +39,7 @@ const DISCOVERIES = [
     color: '#7bdff2',
     hex: 0x7bdff2,
     position: [-31, 23, -75],
-    radius: 4.6,
+    radius: 3.35,
     palette: ['#172e3c', '#34576b', '#799488', '#d3d5bd'],
     planetStyle: { spots: 3 },
     body: [
@@ -57,7 +57,7 @@ const DISCOVERIES = [
     color: '#8ef6a4',
     hex: 0x8ef6a4,
     position: [36, 25, -72],
-    radius: 4.2,
+    radius: 3.1,
     palette: ['#324541', '#64746b', '#a7b5a2', '#d3ceae'],
     planetStyle: { rings: true, bands: true, ringTilt: 0.42 },
     body: [
@@ -124,15 +124,14 @@ const DISCOVERIES = [
   {
     id: 'poker',
     signal: 'journeygoer\'s relay',
-    world: 'Golden Seed',
+    world: 'Midnight Seed',
     title: 'Experience',
     subtitle: 'Application Programmer, Ontario Government MPBSDP',
-    color: '#f2f59f',
-    hex: 0xf2f59f,
-    visibilityBoost: 1.2,
+    color: '#7195cd',
+    hex: 0x31558f,
     position: [4, 66, -78],
     radius: 2.2,
-    palette: ['#19180d', '#55501d', '#b8a94a', '#fff6b0'],
+    palette: ['#030815', '#0c1b36', '#193858', '#466588'],
     planetStyle: { rings: true, ringTilt: 0.78 },
     body: [
       'Built and supported automated QA tooling for Cognos BI reports using the IBM Cognos API and Playwright, helping validate 1,000+ reports per hour and protect reporting integrity.',
@@ -192,14 +191,6 @@ function seededRandom(seed) {
   }
 }
 
-const random = seededRandom(37)
-const terrainCraters = Array.from({ length: 34 }, () => ({
-  x: (random() - 0.5) * 92,
-  z: (random() - 0.5) * 92,
-  radius: 1.7 + random() * 6.5,
-  depth: 0.08 + random() * 0.45,
-}))
-
 function smoothstep(edge0, edge1, value) {
   const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
@@ -209,19 +200,7 @@ function terrainHeight(x, z) {
   const ripples = Math.sin(x * 0.33 + z * 0.18) * 0.045 + Math.sin(z * 0.47) * 0.035
   const distance = Math.hypot(x, z)
   const ridge = smoothstep(14, 48, distance) * (1.6 + Math.sin(x * 0.12 + z * 0.08) * 1.2 + Math.sin(z * 0.18 - x * 0.07) * 0.7)
-  let h = ripples + ridge
-
-  for (const crater of terrainCraters) {
-    const dx = x - crater.x
-    const dz = z - crater.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-
-    if (dist < crater.radius) {
-      const t = dist / crater.radius
-      h -= Math.cos(t * Math.PI * 0.5) * crater.depth
-      h += Math.exp(-Math.pow((t - 0.86) * 6, 2)) * crater.depth * 0.42
-    }
-  }
+  const h = ripples + ridge + Math.sin(x * 0.73) * Math.cos(z * 0.51) * 0.09
 
   const campFlatten = 1 - smoothstep(1.2, 6.2, Math.sqrt(x * x + z * z))
   return THREE.MathUtils.lerp(h, 0, campFlatten)
@@ -637,32 +616,32 @@ export default function App() {
     mount.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x030609)
-    scene.fog = new THREE.FogExp2(0x070c12, 0.011)
+    scene.background = new THREE.Color(0x000102)
+    scene.fog = new THREE.FogExp2(0x000102, 0.12)
 
     const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 220)
     camera.position.set(0, EYE_HEIGHT, 4.15)
 
-    const ambient = new THREE.HemisphereLight(0x9eacc4, 0x302b23, 0.3)
+    const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
     scene.add(ambient)
-    const sunlight = new THREE.DirectionalLight(0xd5dded, 2.1)
+    const sunlight = new THREE.DirectionalLight(0x8f9fb7, 0.5)
     sunlight.position.set(-35, 45, 25)
     scene.add(sunlight)
     const particleTexture = makeParticleTexture()
 
-    const moonMaterial = new THREE.MeshStandardMaterial({
-      map: new THREE.CanvasTexture(makeMoonTexture()),
-      color: 0x918c80,
+    const dirtMaterial = new THREE.MeshStandardMaterial({
+      map: new THREE.CanvasTexture(makeDirtTexture()),
+      color: 0xb1a390,
       roughness: 1,
       metalness: 0,
     })
-    moonMaterial.map.wrapS = THREE.RepeatWrapping
-    moonMaterial.map.wrapT = THREE.RepeatWrapping
-    moonMaterial.map.repeat.set(7, 7)
-    moonMaterial.map.colorSpace = THREE.SRGBColorSpace
-    moonMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
-    moonMaterial.bumpMap = moonMaterial.map
-    moonMaterial.bumpScale = 0.028
+    dirtMaterial.map.wrapS = THREE.RepeatWrapping
+    dirtMaterial.map.wrapT = THREE.RepeatWrapping
+    dirtMaterial.map.repeat.set(12, 12)
+    dirtMaterial.map.colorSpace = THREE.SRGBColorSpace
+    dirtMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    dirtMaterial.bumpMap = dirtMaterial.map
+    dirtMaterial.bumpScale = 0.055
 
     const groundGeometry = new THREE.PlaneGeometry(120, 120, 176, 176)
     const groundPositions = groundGeometry.attributes.position
@@ -673,14 +652,14 @@ export default function App() {
     }
     groundGeometry.computeVertexNormals()
 
-    const ground = new THREE.Mesh(groundGeometry, moonMaterial)
+    const ground = new THREE.Mesh(groundGeometry, dirtMaterial)
     ground.rotation.x = -Math.PI / 2
     ground.receiveShadow = true
     scene.add(ground)
 
     const rocks = new THREE.Group()
     const rockGeometry = new THREE.IcosahedronGeometry(0.24, 1)
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x74756e, map: moonMaterial.map, roughness: 0.96 })
+    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x827868, map: dirtMaterial.map, roughness: 0.96 })
     const rockRand = seededRandom(244)
 
     for (let i = 0; i < 82; i += 1) {
@@ -704,7 +683,7 @@ export default function App() {
     scene.add(rocks)
 
     const starGeometry = new THREE.BufferGeometry()
-    const starCount = 1500
+    const starCount = 2100
     const starRadiusConst = 70
     const starPositions = new Float32Array(starCount * 3)
     const starColors = new Float32Array(starCount * 3)
@@ -717,7 +696,7 @@ export default function App() {
       const y = Math.cos(phi) * radius
       const x = Math.sin(phi) * Math.cos(theta) * radius
       const z = Math.sin(phi) * Math.sin(theta) * radius
-      const brightness = 0.32 + starRand() * 0.5
+      const brightness = 0.65 + starRand() * 0.85
       const cold = starRand() > 0.28
 
       starPositions[i * 3] = x
@@ -733,19 +712,20 @@ export default function App() {
     const stars = new THREE.Points(
       starGeometry,
       new THREE.PointsMaterial({
-        size: 0.18,
+        size: 0.44,
         map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.95,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        toneMapped: false,
         fog: false,
       }),
     )
     scene.add(stars)
 
-    const anchorStarCount = 300
+    const anchorStarCount = 210
     const anchorStarRadiusConst = 100
     const anchorStarGeometry = new THREE.BufferGeometry()
     const anchorStarPositions = new Float32Array(anchorStarCount * 3)
@@ -757,7 +737,7 @@ export default function App() {
       const phi = Math.acos(THREE.MathUtils.lerp(0.08, 0.98, anchorRand()))
       const radius = anchorStarRadiusConst + anchorRand() * anchorStarRadiusConst / 2
       const y = Math.cos(phi) * radius
-      const twinkle = 0.24 + anchorRand() * 0.28
+      const twinkle = 1.6 + anchorRand() * 1.2
 
       anchorStarPositions[i * 3] = Math.sin(phi) * Math.cos(theta) * radius
       anchorStarPositions[i * 3 + 1] = Math.abs(y) + 4
@@ -772,13 +752,14 @@ export default function App() {
     const anchorStars = new THREE.Points(
       anchorStarGeometry,
       new THREE.PointsMaterial({
-        size: 0.38,
+        size: 1.08,
         map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.85,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        toneMapped: false,
         fog: false,
       }),
     )
@@ -816,7 +797,7 @@ export default function App() {
       campfire.add(log)
     }
 
-    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x85817a, map: moonMaterial.map, bumpMap: moonMaterial.map, bumpScale: 0.025, roughness: 1 })
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x85817a, map: dirtMaterial.map, bumpMap: dirtMaterial.map, bumpScale: 0.025, roughness: 1 })
     const stoneGeometry = new THREE.IcosahedronGeometry(0.18, 2)
     for (let i = 0; i < 18; i += 1) {
       const angle = (i / 18) * Math.PI * 2
@@ -1064,7 +1045,7 @@ export default function App() {
       return flame
     })
 
-    const fireLight = new THREE.PointLight(0xff8a2f, 0, 13.5, 1.7)
+    const fireLight = new THREE.PointLight(0xffbb7d, 0, 10, 1.8)
     fireLight.position.set(0, 1.15, 0)
     fireLight.castShadow = true
     fireLight.shadow.mapSize.set(1024, 1024)
@@ -1608,9 +1589,9 @@ export default function App() {
       const firePulse = reducedMotion ? 0.85 : 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
-      ambient.intensity = 0.24 + ignition * 0.08
-      fireLight.intensity = ignition * (7.8 + firePulse * 2.2)
-      lowGlow.intensity = ignition * (1.8 + firePulse)
+      ambient.intensity = 0.025 + ignition * 0.01
+      fireLight.intensity = ignition * (10.5 + firePulse * 2.2)
+      lowGlow.intensity = ignition * (0.55 + firePulse * 0.3)
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
 
       flameMeshes.forEach((flame, index) => {
@@ -1719,7 +1700,7 @@ export default function App() {
 
       // Preserve enough horizontal view to include the camp and planets in portrait.
       const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
+      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 25 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
       camera.updateProjectionMatrix()
 
       stars.position.copy(camera.position)
@@ -1799,18 +1780,22 @@ export default function App() {
         const burstGlow = planet.userData.discoveryGlow
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
-        const brightness = planet.userData.discovered ? 1 : 0.82
+        const brightness = scopeAmount ? 1.7 : 0.26
         planetTint.setRGB(brightness, brightness, brightness)
         planet.material.color.lerp(planetTint, blend)
+        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, scopeAmount ? 0.045 : 0.002, blend)
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
-        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, 0.32 + Math.min(0.15, burstGlow * 0.06), blend)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (scopeAmount ? 0.26 : 0.018) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const ring = planetRings[index]
         ring.lookAt(camera.position)
         ring.material.opacity = THREE.MathUtils.lerp(ring.material.opacity, scopeAmount && focused ? 0.65 : 0, blend)
         const decorRing = planetDecorRings[index]
-        if (decorRing) decorRing.scale.copy(planet.scale)
+        if (decorRing) {
+          decorRing.scale.copy(planet.scale)
+          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, scopeAmount ? 0.8 : 0.14, blend)
+        }
       })
 
       if (elapsed > 1.2 && !hasSetIgnited) {
