@@ -108,13 +108,22 @@
 }
 .scope-completion-band {
   position: absolute; top: 50%; left: 50%;
-  width: min(638px, 80.4vmin); aspect-ratio: 1; border-radius: 50%;
-  transform: translate(-50%, -50%);
-  background: conic-gradient(var(--scope-progress-color) calc(var(--scope-open-progress, 0) * 1turn), transparent 0);
-  mask: radial-gradient(circle, transparent 69.4%, #000 69.6% 70.4%, transparent 70.6%);
-  opacity: 0; transition: opacity 140ms ease;
+  width: min(646px, 81.4vmin); aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  overflow: visible; opacity: 0.9;
 }
-.is-scope-locking .scope-completion-band { opacity: 0.8; }
+.scope-completion-band circle { fill: none; stroke: var(--scope-progress-color); stroke-width: 0.42; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.scan-complete .scope-ring { animation: scope-resolve 1s ease-out; }
+.scan-complete .scope-completion-band { filter: drop-shadow(0 0 6px var(--scope-progress-color)); }
+.discovery-confirmation {
+  position: absolute; top: calc(50% + 95px); left: 50%; z-index: 9;
+  transform: translateX(-50%); text-align: center; pointer-events: none;
+  animation: signal-found 1.1s ease-out both;
+}
+.discovery-confirmation span { display: block; color: var(--suit-amber); font: 9px var(--instrument-font); letter-spacing: 0.22em; text-transform: uppercase; }
+.discovery-confirmation strong { display: block; margin-top: 10px; color: var(--signal-color); font: 15px var(--instrument-font); white-space: nowrap; }
+@keyframes scope-resolve { 0% { box-shadow: 0 0 0 100vmax #02060870, 0 0 0 0 #d6ae7855; } 100% { box-shadow: 0 0 0 100vmax #02060870, 0 0 0 32px #d6ae7800; } }
+@keyframes signal-found { 0% { opacity: 0; filter: blur(5px); transform: translate(-50%, 6px); } 22%, 75% { opacity: 1; filter: blur(0); transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -4px); } }
 .scope-crosshair { position: absolute; top: 50%; left: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%); }
 .scope-crosshair::before, .scope-crosshair::after { content: ''; position: absolute; background: #e0d7b7; }
 .scope-crosshair::before { top: 12px; left: 0; width: 26px; height: 1px; }
@@ -163,12 +172,14 @@
   text-align: left;
 }
 .section-list button:hover, .section-list button.is-active { border-color: var(--suit-line); background: #ffffff08; }
-.destination-orb {
-  position: absolute; top: 18px; left: 14px; width: 32px; height: 32px; border-radius: 50%;
-  background: radial-gradient(circle at 28% 28%, color-mix(in srgb, var(--accent), #d9d4bd 25%), color-mix(in srgb, var(--accent), #1c3030 60%) 43%, #05090b 78%);
-  box-shadow: -1px -1px 0 color-mix(in srgb, var(--accent), transparent 75%);
+.destination-portrait {
+  position: absolute; top: 12px; left: 4px; width: 56px !important; height: 56px !important;
+  object-fit: contain; transition: filter 650ms ease;
 }
-.destination-name { color: var(--accent); font: 9px var(--instrument-font); }
+.is-uncharted .destination-portrait { filter: grayscale(1) brightness(0.2) drop-shadow(0 0 1px #74808b); }
+.destination-name { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--accent); font: 9px var(--instrument-font); }
+.destination-name small { font: 7px var(--instrument-font); color: var(--suit-muted); }
+.is-uncharted .destination-name { color: var(--suit-muted); }
 .section-list strong { font-size: 14px; font-weight: 550; line-height: 1.35; }
 .section-list small { color: var(--suit-muted); font-size: 11px; line-height: 1.5; }
 

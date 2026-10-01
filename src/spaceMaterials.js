@@ -114,6 +114,56 @@ export function makeRingTexture(seed) {
   return texture
 }
 
+export function makePlanetPortrait(renderer, planet, ring, viewpoint) {
+  const size = 160
+  const target = new THREE.WebGLRenderTarget(size, size)
+  target.texture.colorSpace = THREE.SRGBColorSpace
+  const scene = new THREE.Scene()
+  const material = planet.material.clone()
+  material.color.set(0xffffff)
+  material.emissiveIntensity = 0.12
+  const globe = new THREE.Mesh(planet.geometry, material)
+  scene.add(globe, new THREE.HemisphereLight(0xc3d6eb, 0x182027, 0.65))
+  const light = new THREE.DirectionalLight(0xffffff, 2.5)
+  light.position.set(-35, 45, 25)
+  scene.add(light)
+  let ringMaterial
+  if (ring) {
+    ringMaterial = ring.material.clone()
+    ringMaterial.opacity = 0.85
+    const orbit = new THREE.Mesh(ring.geometry, ringMaterial)
+    orbit.quaternion.copy(ring.quaternion)
+    scene.add(orbit)
+  }
+  const radius = planet.geometry.parameters.radius
+  const frame = radius * (ring ? 2.35 : 1.18)
+  const camera = new THREE.OrthographicCamera(-frame, frame, frame, -frame, 0.1, 100)
+  camera.position.copy(viewpoint).sub(planet.position).normalize().multiplyScalar(30)
+  camera.lookAt(0, 0, 0)
+  const previousTarget = renderer.getRenderTarget()
+  const clearColor = renderer.getClearColor(new THREE.Color())
+  const clearAlpha = renderer.getClearAlpha()
+  renderer.setRenderTarget(target)
+  renderer.setClearColor(0x000000, 0)
+  renderer.render(scene, camera)
+  const pixels = new Uint8Array(size * size * 4)
+  renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels)
+  renderer.setRenderTarget(previousTarget)
+  renderer.setClearColor(clearColor, clearAlpha)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const context = canvas.getContext('2d')
+  const image = context.createImageData(size, size)
+  for (let y = 0; y < size; y += 1) {
+    image.data.set(pixels.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4)
+  }
+  context.putImageData(image, 0, 0)
+  target.dispose()
+  material.dispose()
+  ringMaterial?.dispose()
+  return canvas.toDataURL()
+}
+
 export function makeAtmosphereMaterial(color) {
   return new THREE.ShaderMaterial({
     uniforms: { tint: { value: new THREE.Color(color) }, opacity: { value: 0.35 } },

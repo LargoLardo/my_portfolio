@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { createComet } from './spaceComet.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -17,7 +17,7 @@ const RECORD_TRACK_CONFIG_URL = '/record-player-tracks.json'
 const CONTROLS_HINT_DURATION_MS = 8000
 const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
-const SCOPE_AUTO_OPEN_DURATION = 1
+const SCOPE_AUTO_OPEN_DURATION = 1.7
 const MUSIC_FADE_SECONDS = 5
 
 const DEFAULT_RECORD_TRACKS = [
@@ -476,7 +476,7 @@ function Panel({ discovery, onClose }) {
   )
 }
 
-function PortfolioSidebar({ open, activeId, onSelect, onClose, children }) {
+function PortfolioSidebar({ open, activeId, onSelect, onClose, discoveredIds, portraits, children }) {
   const closeRef = useRef(null)
   useEffect(() => {
     if (open) closeRef.current?.focus({ preventScroll: true })
@@ -507,14 +507,15 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose, children }) {
             <p className="section-group-label">{groupName}</p>
             {discoveries.map((discovery) => (
               <button
-                className={activeId === discovery.id ? 'is-active' : ''}
+                className={`${activeId === discovery.id ? 'is-active' : ''} ${discoveredIds.has(discovery.id) ? 'is-discovered' : 'is-uncharted'}`}
+                data-discovered={discoveredIds.has(discovery.id)}
                 type="button"
                 key={discovery.id}
                 onClick={() => onSelect(discovery.id)}
                 style={{ '--accent': discovery.color }}
               >
-                <span className="destination-orb" aria-hidden="true" />
-                <span className="destination-name">{discovery.world}</span>
+                <img className="destination-portrait" src={portraits[discovery.id]} alt="" aria-hidden="true" />
+                <span className="destination-name">{discovery.world}<small>{discoveredIds.has(discovery.id) ? 'Located' : 'Uncharted'}</small></span>
                 <strong>{discovery.title}</strong>
                 <small>{discovery.subtitle}</small>
               </button>
@@ -539,8 +540,11 @@ export default function App() {
   const [scopeActiveState, setScopeActiveState] = useState(false)
   const [scopeProximity, setScopeProximity] = useState(0)
   const scopeProximityRef = useRef(0)
-  const [scopeHoldProgress, setScopeHoldProgress] = useState(0)
-  const scopeHoldProgressRef = useRef(0)
+  const progressCircleRef = useRef(null)
+  const [completedDiscovery, setCompletedDiscovery] = useState(null)
+  const [discoveredIds, setDiscoveredIds] = useState(new Set())
+  const [planetPortraits, setPlanetPortraits] = useState({})
+  const pendingRevealRef = useRef(null)
   const [focusedTarget, setFocusedTarget] = useState(null)
   const [activeDiscovery, setActiveDiscovery] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -568,8 +572,7 @@ export default function App() {
     scopeActiveRef.current = value
     setScopeActiveState(value)
     if (!value) {
-      scopeHoldProgressRef.current = 0
-      setScopeHoldProgress(0)
+      if (progressCircleRef.current) progressCircleRef.current.style.strokeDashoffset = '1'
     }
     if (value) {
       setControlsVisible(false)
@@ -584,16 +587,20 @@ export default function App() {
     })
   }, [])
 
+  const markDiscovered = useCallback((id) => {
+    if (!id || discoveredIdsRef.current.has(id)) return
+    discoveredIdsRef.current.add(id)
+    setDiscoveredIds(new Set(discoveredIdsRef.current))
+    discoveryEventsRef.current.push({ id, firstDiscovery: true })
+  }, [])
+
   const revealDiscovery = useCallback((id) => {
     if (!id) return
-
-    const firstDiscovery = !discoveredIdsRef.current.has(id)
-    if (firstDiscovery) {
-      discoveredIdsRef.current.add(id)
-      discoveryEventsRef.current.push({ id, firstDiscovery: true })
-    }
+    pendingRevealRef.current = null
+    setCompletedDiscovery(null)
+    markDiscovered(id)
     setActiveDiscovery(id)
-  }, [])
+  }, [markDiscovered])
 
   const selectDiscovery = useCallback(
     (id) => {
@@ -654,7 +661,7 @@ export default function App() {
     scene.background = new THREE.Color(0x000102)
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
 
-    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 220)
+    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 360)
     camera.position.set(0, EYE_HEIGHT, 4.15)
 
     const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
@@ -1151,6 +1158,7 @@ export default function App() {
     const skyGroup = new THREE.Group()
     scene.add(skyGroup)
 
+    const portraits = {}
     DISCOVERIES.forEach((discovery, index) => {
       const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle))
       planetTexture.colorSpace = THREE.SRGBColorSpace
@@ -1178,7 +1186,7 @@ export default function App() {
           .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
             totalEmissiveRadiance *= 0.06 + 0.94 * max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);`)
       }
-      planet.position.set(...discovery.position)
+      planet.position.set(...discovery.position).multiplyScalar(1.65)
       planet.userData.discoveryId = discovery.id
       planet.userData.discovered = discoveredIdsRef.current.has(discovery.id)
       planet.userData.discoveryGlow = 0
@@ -1219,6 +1227,7 @@ export default function App() {
         skyGroup.add(decorRing)
       }
       planetDecorRings.push(decorRing)
+      portraits[discovery.id] = makePlanetPortrait(renderer, planet, decorRing, camera.position)
     })
 
     const burstCount = 256
@@ -1252,12 +1261,23 @@ export default function App() {
     burstParticles.frustumCulled = false
     burstParticles.renderOrder = 8
     skyGroup.add(burstParticles)
+    const discoveryWave = new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.025, 128),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+    )
+    skyGroup.add(discoveryWave)
+    let waveAge = 2
+    let waveRadius = 1
 
     const spawnDiscoveryBurst = (planet, index, firstDiscovery) => {
       if (!firstDiscovery) return
 
       const discovery = DISCOVERIES[index]
       const color = new THREE.Color(discovery.hex)
+      waveAge = 0
+      waveRadius = discovery.radius
+      discoveryWave.position.copy(planet.position)
+      discoveryWave.material.color.copy(color).lerp(new THREE.Color(0xffffff), 0.4)
       const burstSize = 72
       const visibilityBoost = discovery.visibilityBoost ?? 1
       planet.userData.discovered = true
@@ -1326,75 +1346,57 @@ export default function App() {
     let scopeHoldTarget = null
     let scopeHoldElapsed = 0
     let scopeAutoOpenedTarget = null
-    const scopeSparkTimes = new Map()
+    let scopeLostTime = 0
+    let displayedProgress = 0
     let hasSetIgnited = false
     const startTime = performance.now()
     let lastTime = startTime
     let raf = 0
 
-    const triggerScopeDiscovery = (id, elapsed) => {
-      if (!id || !scopeActiveRef.current) return
-
-      const lastSpark = scopeSparkTimes.get(id) ?? -Infinity
-      if (elapsed - lastSpark < 1.2) return
-
-      const firstDiscovery = !discoveredIdsRef.current.has(id)
-      if (!firstDiscovery) return
-
-      scopeSparkTimes.set(id, elapsed)
-      discoveredIdsRef.current.add(id)
-      discoveryEventsRef.current.push({ id, firstDiscovery: true })
-    }
-
-    const setFocus = (id, elapsed) => {
+    const setFocus = (id) => {
       if (localFocus === id) return
-      triggerScopeDiscovery(id, elapsed)
       localFocus = id
       setFocusedTarget(id)
-    }
-
-    const setScopeHoldProgressValue = (value, force = false) => {
-      const nextProgress = THREE.MathUtils.clamp(value, 0, 1)
-      if (!force && Math.abs(nextProgress - scopeHoldProgressRef.current) < 0.012) return
-
-      scopeHoldProgressRef.current = nextProgress
-      setScopeHoldProgress(nextProgress)
     }
 
     const resetScopeHold = () => {
       scopeHoldTarget = null
       scopeHoldElapsed = 0
+      scopeLostTime = 0
       scopeAutoOpenedTarget = null
-      setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
     }
 
     const updateScopeAutoOpen = (id, dt) => {
-      if (!scopeActiveRef.current || !id) {
+      if (pendingRevealRef.current) {
+        pendingRevealRef.current.remaining -= dt
+        if (pendingRevealRef.current.remaining <= 0) revealDiscovery(pendingRevealRef.current.id)
+      }
+      if (!scopeActiveRef.current) {
         resetScopeHold()
-        return
+      } else if (!id) {
+        scopeLostTime += dt
+        if (scopeLostTime > 0.2) scopeHoldElapsed = Math.max(0, scopeHoldElapsed - dt * 1.5)
+        if (scopeHoldElapsed === 0) resetScopeHold()
+      } else {
+        scopeLostTime = 0
+        if (scopeHoldTarget !== id) {
+          scopeHoldTarget = id
+          scopeHoldElapsed = 0
+          scopeAutoOpenedTarget = null
+        }
+        if (scopeAutoOpenedTarget !== id) {
+          scopeHoldElapsed = Math.min(SCOPE_AUTO_OPEN_DURATION, scopeHoldElapsed + dt)
+          if (scopeHoldElapsed >= SCOPE_AUTO_OPEN_DURATION) {
+            scopeAutoOpenedTarget = id
+            markDiscovered(id)
+            setCompletedDiscovery(id)
+            pendingRevealRef.current = { id, remaining: reducedMotion ? 0.2 : 1.05 }
+          }
+        }
       }
-
-      if (scopeHoldTarget !== id) {
-        scopeHoldTarget = id
-        scopeHoldElapsed = 0
-        scopeAutoOpenedTarget = null
-        setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-      }
-
-      if (scopeAutoOpenedTarget === id) {
-        setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-        return
-      }
-
-      scopeHoldElapsed = Math.min(SCOPE_AUTO_OPEN_DURATION, scopeHoldElapsed + dt)
       const progress = scopeHoldElapsed / SCOPE_AUTO_OPEN_DURATION
-      setScopeHoldProgressValue(progress, progress >= 1)
-
-      if (progress >= 1) {
-        scopeAutoOpenedTarget = id
-        setScopeHoldProgressValue(0, true)
-        revealDiscovery(id)
-      }
+      displayedProgress = progress === 1 ? 1 : THREE.MathUtils.damp(displayedProgress, progress, 22, dt)
+      if (progressCircleRef.current) progressCircleRef.current.style.strokeDashoffset = String(1 - displayedProgress)
     }
 
     const setSignPromptAvailable = (value) => {
@@ -1469,14 +1471,7 @@ export default function App() {
       Boolean(recordAudio && recordTrackTitle) && isInteractionBoxAtPointer(event, recordInteractionMesh, PHONOGRAPH_INTERACT_DISTANCE)
 
     const openFocusedPlanet = (event = null) => {
-      if (scopeActiveRef.current) {
-        if (localFocus) {
-          scopeAutoOpenedTarget = localFocus
-          setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-          revealDiscovery(localFocus)
-        }
-        return
-      }
+      if (scopeActiveRef.current) return
 
       const clickedId = event ? getDiscoveredPlanetIdAtPointer(event) : null
       if (clickedId) {
@@ -1514,12 +1509,8 @@ export default function App() {
     }
 
     const onPointerDown = (event) => {
-      if (event.button === 2) {
-        setScopeActive(true)
-        return
-      }
-
-      if (event.button !== 0) return
+      if (event.button !== 0 && event.button !== 2) return
+      if (event.button === 2) setScopeActive(true)
 
       mount.focus({ preventScroll: true })
       drag.active = true
@@ -1540,8 +1531,9 @@ export default function App() {
       drag.y = event.clientY
       drag.moved += Math.abs(dx) + Math.abs(dy)
 
-      yaw -= dx * 0.003
-      pitch = THREE.MathUtils.clamp(pitch - dy * 0.0028, -0.65, 1.18)
+      const sensitivity = scopeActiveRef.current ? 0.0014 : 0.003
+      yaw -= dx * sensitivity
+      pitch = THREE.MathUtils.clamp(pitch - dy * sensitivity, -0.65, 1.18)
     }
 
     const onPointerLeave = () => {
@@ -1550,14 +1542,11 @@ export default function App() {
     }
 
     const onPointerUp = (event) => {
-      if (event.button === 2) {
-        setScopeActive(false)
-        return
-      }
+      if (event.button === 2) setScopeActive(false)
 
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
-      if (drag.moved < 7) {
+      if (event.button === 0 && drag.moved < 7) {
         if (!tryOpenSignPanel(event) && !trySkipRecord(event)) {
           openFocusedPlanet(event)
         }
@@ -1575,6 +1564,9 @@ export default function App() {
     const onKeyDown = (event) => {
       if (event.repeat) return
       if (event.code === 'Escape') {
+        pendingRevealRef.current = null
+        setCompletedDiscovery(null)
+        resetScopeHold()
         setActiveDiscovery(null)
         setSidebarOpen(false)
         setSignPanelOpen(false)
@@ -1606,6 +1598,8 @@ export default function App() {
     }
 
     const onBlur = () => {
+      pendingRevealRef.current = null
+      setCompletedDiscovery(null)
       pressed.clear()
       velocity.set(0, 0, 0)
       drag.active = false
@@ -1754,12 +1748,19 @@ export default function App() {
 
       // Preserve enough horizontal view to include the camp and planets in portrait.
       const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 25 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
+      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
       camera.updateProjectionMatrix()
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
       comet.update(elapsed, dt, camera, reducedMotion)
+      waveAge += dt
+      discoveryWave.visible = waveAge < 1.3 && !reducedMotion
+      if (discoveryWave.visible) {
+        discoveryWave.lookAt(camera.position)
+        discoveryWave.scale.setScalar(waveRadius * (1.1 + waveAge * 3.5))
+        discoveryWave.material.opacity = Math.max(0, 1 - waveAge / 1.3) ** 2 * 0.85
+      }
 
       while (discoveryEventsRef.current.length > 0) {
         const event = discoveryEventsRef.current.shift()
@@ -1826,7 +1827,7 @@ export default function App() {
         scopeProximityRef.current = proximity
         setScopeProximity(proximity)
       }
-      setFocus(focusedId, elapsed)
+      setFocus(focusedId)
       updateScopeAutoOpen(focusedId, dt)
 
       planetMeshes.forEach((planet, index) => {
@@ -1835,27 +1836,29 @@ export default function App() {
         const burstGlow = planet.userData.discoveryGlow
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
-        const brightness = scopeAmount ? 1.7 : 0.26
+        const spotted = focused && scopeAmount
+        const brightness = scopeAmount ? 1.7 : planet.userData.discovered ? 0.95 : 0.62
         planetTint.setRGB(brightness, brightness, brightness)
         planet.material.color.lerp(planetTint, blend)
-        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, scopeAmount ? 0.8 : 0.002, blend)
+        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, spotted ? 1.35 : scopeAmount ? 0.65 : planet.userData.discovered ? 0.28 : 0.12, blend)
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
-        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (scopeAmount ? 0.26 : 0.018) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const ring = planetRings[index]
         ring.lookAt(camera.position)
         ring.material.opacity = THREE.MathUtils.lerp(ring.material.opacity, scopeAmount && focused ? 0.65 : 0, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
           decorRing.scale.copy(planet.scale)
-          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, scopeAmount ? 0.8 : 0.14, blend)
+          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, scopeAmount ? 0.8 : planet.userData.discovered ? 0.42 : 0.28, blend)
         }
       })
 
       if (elapsed > 1.2 && !hasSetIgnited) {
         hasSetIgnited = true
         setIgnited(true)
+        setPlanetPortraits(portraits)
       }
 
       renderer.render(scene, camera)
@@ -1894,17 +1897,16 @@ export default function App() {
       }
       disposeScene(scene, renderer)
     }
-  }, [revealDiscovery, setScopeActive])
+  }, [markDiscovered, revealDiscovery, setScopeActive])
 
   return (
     <main
-      className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${scopeHoldProgress > 0 ? 'is-scope-locking' : ''} ${
+      className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${completedDiscovery ? 'scan-complete' : ''} ${
         ignited ? 'is-lit' : ''
       } ${sidebarOpen ? 'has-sidebar' : ''}`}
       style={{
         '--scope-lock-scale': 1 - scopeProximity * 0.72,
         '--scope-lock-opacity': 0.24 + scopeProximity * 0.76,
-        '--scope-open-progress': scopeHoldProgress,
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
@@ -1928,6 +1930,8 @@ export default function App() {
           aria-controls="field-log"
           aria-expanded={sidebarOpen}
           onClick={() => {
+            pendingRevealRef.current = null
+            setCompletedDiscovery(null)
             setActiveDiscovery(null)
             setSignPanelOpen(false)
             setScopeActive(false)
@@ -1950,9 +1954,15 @@ export default function App() {
       <div className="scope-overlay" aria-hidden="true">
         <div className="scope-ring" />
         <div className="scope-lock-circle" />
-        <div className="scope-completion-band" />
+        <svg className="scope-completion-band" viewBox="0 0 100 100"><circle ref={progressCircleRef} cx="50" cy="50" r="48" pathLength="1" /></svg>
         <div className="scope-crosshair" />
       </div>
+
+      {completedDiscovery && (
+        <div key={completedDiscovery} className="discovery-confirmation" role="status" style={{ '--signal-color': DISCOVERY_BY_ID[completedDiscovery].color }}>
+          <span>Signal located</span><strong>{DISCOVERY_BY_ID[completedDiscovery].world}</strong>
+        </div>
+      )}
 
       {scopeActiveState && (
         <div className="signal-readout" style={{ '--signal-color': focusedData?.color ?? '#f7f2d6' }}>
@@ -1983,6 +1993,8 @@ export default function App() {
       <PortfolioSidebar
         open={sidebarOpen}
         activeId={activeDiscovery}
+        discoveredIds={discoveredIds}
+        portraits={planetPortraits}
         onSelect={selectDiscovery}
         onClose={() => {
           setSidebarOpen(false)
