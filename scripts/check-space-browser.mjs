@@ -37,8 +37,18 @@ const progress = () => evaluate("1 - Number(document.querySelector('.scope-compl
 const mouse = (type, x, y, button = 'right', buttons = 2) => send('Input.dispatchMouseEvent', { type, x, y, button, buttons, clickCount: 1 })
 try {
   await send('Runtime.enable')
+  await send('Page.enable')
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  const loaded = new Promise(resolve => {
+    const onLoad = ({ data }) => {
+      if (JSON.parse(data).method !== 'Page.loadEventFired') return
+      socket.removeEventListener('message', onLoad)
+      resolve()
+    }
+    socket.addEventListener('message', onLoad)
+  })
   await send('Page.reload', { ignoreCache: true })
+  await loaded
   await waitFor("document.querySelectorAll('.destination-portrait').length === 8 && [...document.querySelectorAll('.destination-portrait')].every(e => e.naturalWidth === 160)")
   assert.equal(await evaluate("new Set([...document.querySelectorAll('.destination-portrait')].map(e => e.src)).size"), 8)
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 0)

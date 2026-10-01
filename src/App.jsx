@@ -200,7 +200,8 @@ function terrainHeight(x, z) {
   const ripples = Math.sin(x * 0.33 + z * 0.18) * 0.045 + Math.sin(z * 0.47) * 0.035
   const distance = Math.hypot(x, z)
   const ridge = smoothstep(14, 48, distance) * (1.6 + Math.sin(x * 0.12 + z * 0.08) * 1.2 + Math.sin(z * 0.18 - x * 0.07) * 0.7)
-  const h = ripples + ridge + Math.sin(x * 0.73) * Math.cos(z * 0.51) * 0.09
+  const hummocks = Math.sin(x * 1.2 + Math.sin(z * 0.8)) * Math.cos(z * 1.6) * 0.09
+  const h = ripples + ridge + hummocks + Math.sin(x * 0.73) * Math.cos(z * 0.51) * 0.16
 
   const campFlatten = 1 - smoothstep(1.2, 6.2, Math.sqrt(x * x + z * z))
   return THREE.MathUtils.lerp(h, 0, campFlatten)
@@ -271,11 +272,18 @@ function makeWoodBumpTexture(seed = 1, width = 512, height = 128) {
   return canvas
 }
 
-function makeCarvedWoodTexture() {
-  const canvas = makeWoodGrainTexture(719, 1024, 384)
+function makeCarvedWoodTexture(text, seed) {
+  const canvas = makeWoodGrainTexture(seed, 1024, 256)
   const ctx = canvas.getContext('2d')
-  const rand = seededRandom(512)
-  // Uneven knife strokes leave dark cuts with a thin edge of exposed wood.
+  const rand = seededRandom(seed + 512)
+  const weather = ctx.createLinearGradient(0, 0, 0, 256)
+  weather.addColorStop(0, '#140e09aa')
+  weather.addColorStop(0.18, '#140e0910')
+  weather.addColorStop(0.75, '#140e0922')
+  weather.addColorStop(1, '#140e09bb')
+  ctx.fillStyle = weather
+  ctx.fillRect(0, 0, 1024, 256)
+  // Irregular gouges expose raw wood along one lip, with a dark recessed center.
   const letters = {
     L: [[[0, 0], [0, 1], [0.7, 1]]],
     O: [[[0.1, 0], [0.65, 0.04], [0.72, 0.9], [0.1, 1], [0, 0.1], [0.1, 0]]],
@@ -291,28 +299,61 @@ function makeCarvedWoodTexture() {
   }
   const carve = (text, x, y, size) => {
     for (const letter of text) {
+      const tilt = (rand() - 0.5) * 0.12
+      const baseline = y + (rand() - 0.5) * 12
       for (const stroke of letters[letter] ?? []) {
-        const points = stroke.map(([px, py]) => [x + px * size + rand() * 3, y + py * size + rand() * 3])
-        for (let pass = 0; pass < 3; pass += 1) {
-          ctx.strokeStyle = ['#29170dcc', '#bc956a', '#dfb58199'][pass]
-          ctx.lineWidth = [size * 0.095, size * 0.038, size * 0.012][pass]
+        const points = stroke.map(([px, py]) => [x + (px + py * tilt) * size + rand() * 2, baseline + py * size])
+        for (let segment = 1; segment < points.length; segment += 1) {
+          const [ax, ay] = points[segment - 1], [bx, by] = points[segment]
+          const length = Math.hypot(bx - ax, by - ay)
+          const nx = -(by - ay) / length, ny = (bx - ax) / length
+          const width = size * (0.035 + rand() * 0.021)
+          ctx.fillStyle = '#d0aa74'
           ctx.beginPath()
-          points.forEach(([px, py], i) => i ? ctx.lineTo(px + pass, py + pass) : ctx.moveTo(px + pass, py + pass))
+          ctx.moveTo(ax - nx * width, ay - ny * width)
+          ctx.lineTo((ax + bx) * 0.5 - nx * width * 1.6, (ay + by) * 0.5 - ny * width * 1.6)
+          ctx.lineTo(bx + nx, by + ny)
+          ctx.lineTo(bx + nx * width, by + ny * width)
+          ctx.lineTo(ax + nx * width * 0.6, ay + ny * width * 0.6)
+          ctx.closePath()
+          ctx.fill()
+          ctx.strokeStyle = '#28180ef0'
+          ctx.lineWidth = width * 1.25
+          ctx.beginPath()
+          ctx.moveTo(ax, ay)
+          ctx.lineTo((ax + bx) * 0.5 + rand() * 2, (ay + by) * 0.5)
+          ctx.lineTo(bx, by)
+          ctx.stroke()
+          // Fine overshoots and splinters avoid the look of printed lettering.
+          ctx.strokeStyle = '#dab98280'
+          ctx.lineWidth = 0.9
+          ctx.beginPath()
+          ctx.moveTo(ax - nx * width, ay - ny * width)
+          ctx.lineTo(bx + (bx - ax) * 0.08 - nx * width, by + (by - ay) * 0.08 - ny * width)
           ctx.stroke()
         }
       }
       x += size * (letter === ' ' ? 0.55 : 0.95)
     }
   }
-  carve('LOOK UP', 85, 62, 140)
-  carve('HOLD SPACE', 225, 278, 62)
+  const size = text === 'LOOK UP' ? 142 : 98
+  carve(text, text === 'LOOK UP' ? 78 : 72, (256 - size) / 2, size)
   for (let i = 0; i < 85; i += 1) {
-    const x = rand() * 1024, y = rand() * 384
+    const x = rand() * 1024, y = rand() * 256
     ctx.strokeStyle = rand() > 0.5 ? '#cfb48d22' : '#20110855'
     ctx.lineWidth = 0.5 + rand() * 2
     ctx.beginPath()
     ctx.moveTo(x, y)
     ctx.lineTo(x + 8 + rand() * 115, y + (rand() - 0.5) * 6)
+    ctx.stroke()
+  }
+  for (let i = 0; i < 7; i += 1) {
+    const x = i % 2 ? 0 : 1024, y = 15 + rand() * 226
+    ctx.strokeStyle = '#170f0bc0'
+    ctx.lineWidth = 1 + rand() * 3
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + (x ? -1 : 1) * (100 + rand() * 180), y + rand() * 6)
     ctx.stroke()
   }
   return canvas
@@ -408,6 +449,7 @@ function shortestAngleDelta(from, to) {
 
 function disposeObjectTree(root) {
   root.traverse((object) => {
+    if (object.isInstancedMesh) object.dispose()
     if (object.geometry) {
       object.geometry.dispose()
     }
@@ -679,19 +721,29 @@ export default function App() {
     })
     dirtMaterial.map.wrapS = THREE.RepeatWrapping
     dirtMaterial.map.wrapT = THREE.RepeatWrapping
-    dirtMaterial.map.repeat.set(12, 12)
+    dirtMaterial.map.repeat.set(24, 24)
     dirtMaterial.map.colorSpace = THREE.SRGBColorSpace
     dirtMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     dirtMaterial.bumpMap = dirtMaterial.map
-    dirtMaterial.bumpScale = 0.055
+    dirtMaterial.bumpScale = 0.085
+    dirtMaterial.vertexColors = true
 
-    const groundGeometry = new THREE.PlaneGeometry(120, 120, 176, 176)
+    const groundGeometry = new THREE.PlaneGeometry(120, 120, 240, 240)
     const groundPositions = groundGeometry.attributes.position
+    const groundColors = new Float32Array(groundPositions.count * 3)
+    const soilColor = new THREE.Color()
+    const sandColor = new THREE.Color(0xd8bc8e)
+    const earthColor = new THREE.Color(0x726953)
     for (let i = 0; i < groundPositions.count; i += 1) {
       const x = groundPositions.getX(i)
       const z = -groundPositions.getY(i)
       groundPositions.setZ(i, terrainHeight(x, z))
+      const sand = smoothstep(-0.5, 0.65, Math.sin(x * 0.83 + Math.sin(z)) * Math.cos(z * 0.57))
+      soilColor.copy(earthColor).lerp(sandColor, sand)
+      soilColor.multiplyScalar(THREE.MathUtils.lerp(0.5, 1, smoothstep(0.8, 2.8, Math.hypot(x, z))))
+      soilColor.toArray(groundColors, i * 3)
     }
+    groundGeometry.setAttribute('color', new THREE.BufferAttribute(groundColors, 3))
     groundGeometry.computeVertexNormals()
 
     const ground = new THREE.Mesh(groundGeometry, dirtMaterial)
@@ -700,20 +752,25 @@ export default function App() {
     scene.add(ground)
 
     const rocks = new THREE.Group()
-    const rockGeometry = new THREE.IcosahedronGeometry(0.24, 1)
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x827868, map: dirtMaterial.map, roughness: 0.96 })
+    const rockGeometry = mergeVertices(new THREE.IcosahedronGeometry(0.24, 2))
+    const rockVertices = rockGeometry.attributes.position
+    for (let i = 0; i < rockVertices.count; i += 1) {
+      const x = rockVertices.getX(i), y = rockVertices.getY(i), z = rockVertices.getZ(i)
+      const crag = 1 + Math.sin(x * 31 + y * 13) * Math.cos(z * 23 - y * 17) * 0.18
+      rockVertices.setXYZ(i, x * crag, y * crag, z * crag)
+    }
+    rockGeometry.computeVertexNormals()
+    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x928878, map: dirtMaterial.map, bumpMap: dirtMaterial.map, bumpScale: 0.028, roughness: 1 })
     const rockRand = seededRandom(244)
 
-    for (let i = 0; i < 82; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       const angle = rockRand() * Math.PI * 2
-      const radius = 4.2 + rockRand() * 44
+      const radius = 3.2 + rockRand() ** 2 * 36
       const x = Math.cos(angle) * radius
       const z = Math.sin(angle) * radius
 
-      if (Math.sqrt(x * x + z * z) < 7.2) continue
-
       const rock = new THREE.Mesh(rockGeometry, rockMaterial)
-      const scale = 0.32 + rockRand() * 1.4
+      const scale = 0.5 + rockRand() ** 2 * 2.8
       rock.position.set(x, terrainHeight(x, z) + scale * 0.12, z)
       rock.rotation.set(rockRand() * Math.PI, rockRand() * Math.PI, rockRand() * Math.PI)
       rock.scale.set(scale * 1.25, scale * 0.7, scale)
@@ -723,6 +780,57 @@ export default function App() {
     }
 
     scene.add(rocks)
+
+    // Instanced gravel and dry grass keep the campsite detailed with two draw calls.
+    const gravel = new THREE.InstancedMesh(rockGeometry, rockMaterial, 460)
+    const instance = new THREE.Object3D()
+    const instanceColor = new THREE.Color()
+    for (let i = 0; i < gravel.count; i += 1) {
+      const angle = rockRand() * Math.PI * 2
+      const radius = 1.15 + rockRand() ** 0.7 * 10
+      const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius
+      const size = 0.06 + rockRand() ** 2 * 0.48
+      instance.position.set(x, terrainHeight(x, z) + size * 0.07, z)
+      instance.rotation.set(rockRand() * 3, rockRand() * 6, rockRand() * 3)
+      instance.scale.set(size * 1.4, size * 0.65, size)
+      instance.updateMatrix()
+      gravel.setMatrixAt(i, instance.matrix)
+      gravel.setColorAt(i, instanceColor.setHSL(0.08 + rockRand() * 0.05, 0.12, 0.42 + rockRand() * 0.3))
+    }
+    gravel.receiveShadow = true
+    scene.add(gravel)
+
+    const grassVertices = []
+    for (let blade = 0; blade < 7; blade += 1) {
+      const angle = blade * 2.4
+      const x = Math.cos(angle) * 0.055, z = Math.sin(angle) * 0.055
+      const height = 0.13 + rockRand() * 0.18
+      const leanX = x * 1.8, leanZ = z * 1.8
+      const width = 0.004 + rockRand() * 0.005
+      const a = [x - width, 0, z], b = [x + width, 0, z]
+      const c = [x + leanX * 0.4 - width * 0.5, height * 0.6, z + leanZ * 0.4]
+      const d = [c[0] + width, c[1], c[2]], tip = [x + leanX, height, z + leanZ]
+      grassVertices.push(...a, ...b, ...c, ...b, ...d, ...c, ...c, ...d, ...tip)
+    }
+    const grassGeometry = new THREE.BufferGeometry()
+    grassGeometry.setAttribute('position', new THREE.Float32BufferAttribute(grassVertices, 3))
+    grassGeometry.computeVertexNormals()
+    const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x8b8460, roughness: 1, side: THREE.DoubleSide }), 220)
+    for (let i = 0; i < grass.count; i += 1) {
+      // Small patches leave the trampled ground around the fire mostly bare.
+      const patch = i % 18, angle = patch * 2.4
+      const radius = 3.1 + (patch % 7) * 0.72
+      const x = Math.cos(angle) * radius + (rockRand() - 0.5) * 1.3
+      const z = Math.sin(angle) * radius + (rockRand() - 0.5) * 1.3
+      instance.position.set(x, terrainHeight(x, z) - 0.012, z)
+      instance.rotation.set(0, rockRand() * Math.PI * 2, 0)
+      instance.scale.setScalar(0.6 + rockRand() * 0.9)
+      instance.updateMatrix()
+      grass.setMatrixAt(i, instance.matrix)
+      grass.setColorAt(i, instanceColor.setHSL(0.12 + rockRand() * 0.08, 0.16, 0.38 + rockRand() * 0.2))
+    }
+    grass.receiveShadow = true
+    scene.add(grass)
 
     const starGeometry = new THREE.BufferGeometry()
     const starCount = 2100
@@ -862,31 +970,72 @@ export default function App() {
     signGroup.rotation.y = 0.18
     scene.add(signGroup)
 
-    const signWood = createWoodMaterial(716, 0xb8a38b, 1, 1)
-    const signPost = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.15, 0.085), signWood)
-    signPost.position.set(0, 0.5, -0.09)
-    signPost.castShadow = true
-    signGroup.add(signPost)
+    const signWood = createWoodMaterial(716, 0x9e8b6f, 1, 1)
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.27, 0.085), signWood)
+      post.position.set(side * 0.52, 0.5, -0.1)
+      post.rotation.z = side * 0.07
+      post.castShadow = true
+      signGroup.add(post)
+    }
 
     const signBoardGroup = new THREE.Group()
     signBoardGroup.position.set(0, 1, 0)
     signBoardGroup.rotation.z = -0.04
     signGroup.add(signBoardGroup)
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 0.12), signWood)
-    housing.castShadow = true
-    housing.receiveShadow = true
-    signBoardGroup.add(housing)
-
-    const label = makeCarvedWoodTexture()
-    const labelTexture = new THREE.CanvasTexture(label)
-    labelTexture.colorSpace = THREE.SRGBColorSpace
-    labelTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.1, 0.07), signWood)
+    brace.position.z = -0.15
+    brace.rotation.z = 0.37
+    brace.castShadow = true
+    signBoardGroup.add(brace)
+    const pegMaterial = new THREE.MeshStandardMaterial({ color: 0x493020, roughness: 1 })
+    const pegGeometry = new THREE.CylinderGeometry(0.016, 0.013, 0.016, 7)
+    const planks = [
+      { text: 'LOOK UP', width: 1.86, height: 0.36, x: -0.025, y: 0.17, tilt: 0.015 },
+      { text: 'HOLD SPACE', width: 1.71, height: 0.27, x: 0.045, y: -0.18, tilt: -0.028 },
+    ]
+    planks.forEach((plank, index) => {
+      const group = new THREE.Group()
+      group.position.set(plank.x, plank.y, index * 0.012)
+      group.rotation.z = plank.tilt
+      const outline = new THREE.Shape()
+      const corners = [[-0.5, -0.42], [-0.33, -0.48], [0.32, -0.46], [0.49, -0.5], [0.482, -0.13], [0.5, 0.08], [0.485, 0.46], [0.17, 0.49], [-0.12, 0.46], [-0.49, 0.5], [-0.48, 0.08], [-0.5, -0.03]]
+      corners.forEach(([x, y], i) => {
+        const px = (x + Math.sin(i * 3 + index * 5) * 0.005) * plank.width, py = y * plank.height
+        if (i === 0) outline.moveTo(px, py)
+        else outline.lineTo(px, py)
+      })
+      outline.closePath()
+      const board = new THREE.Mesh(new THREE.ExtrudeGeometry(outline, { depth: 0.09, bevelEnabled: false }), signWood)
+      board.position.z = -0.05
+      board.castShadow = true
+      board.receiveShadow = true
+      group.add(board)
+      const faceGeometry = new THREE.ShapeGeometry(outline)
+      const positions = faceGeometry.attributes.position, uv = faceGeometry.attributes.uv
+      for (let i = 0; i < positions.count; i += 1) {
+        uv.setXY(i, positions.getX(i) / plank.width + 0.5, positions.getY(i) / plank.height + 0.5)
+      }
+      const texture = new THREE.CanvasTexture(makeCarvedWoodTexture(plank.text, 719 + index * 13))
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+      const face = new THREE.Mesh(faceGeometry, new THREE.MeshStandardMaterial({ map: texture, bumpMap: texture, bumpScale: 0.008, roughness: 1 }))
+      face.position.z = 0.041
+      face.receiveShadow = true
+      group.add(face)
+      for (const side of [-1, 1]) {
+        const peg = new THREE.Mesh(pegGeometry, pegMaterial)
+        peg.rotation.x = Math.PI / 2
+        peg.position.set(side * 0.57, 0.015 * side, 0.046)
+        group.add(peg)
+      }
+      signBoardGroup.add(group)
+    })
     const signInteractionMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.76, 0.69),
-      new THREE.MeshStandardMaterial({ map: labelTexture, bumpMap: labelTexture, bumpScale: 0.012, roughness: 1 }),
+      new THREE.BoxGeometry(1.9, 0.73, 0.15),
+      new THREE.MeshBasicMaterial({ visible: false }),
     )
     signInteractionMesh.geometry.computeBoundingBox()
-    signInteractionMesh.position.z = 0.061
     signBoardGroup.add(signInteractionMesh)
     const recordX = 1.7
     const recordZ = -1.6
@@ -1374,6 +1523,7 @@ export default function App() {
       if (!scopeActiveRef.current) {
         resetScopeHold()
       } else if (!id) {
+        if (scopeAutoOpenedTarget && !pendingRevealRef.current) resetScopeHold()
         scopeLostTime += dt
         if (scopeLostTime > 0.2) scopeHoldElapsed = Math.max(0, scopeHoldElapsed - dt * 1.5)
         if (scopeHoldElapsed === 0) resetScopeHold()

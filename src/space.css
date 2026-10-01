@@ -178,7 +178,7 @@
 }
 .is-uncharted .destination-portrait { filter: grayscale(1) brightness(0.2) drop-shadow(0 0 1px #74808b); }
 .destination-name { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--accent); font: 9px var(--instrument-font); }
-.destination-name small { font: 7px var(--instrument-font); color: var(--suit-muted); }
+.section-list .destination-name small { flex-shrink: 0; font: 8px var(--instrument-font); color: var(--suit-muted); }
 .is-uncharted .destination-name { color: var(--suit-muted); }
 .section-list strong { font-size: 14px; font-weight: 550; line-height: 1.35; }
 .section-list small { color: var(--suit-muted); font-size: 11px; line-height: 1.5; }
@@ -238,4 +238,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .space-app *, .space-app *::before, .space-app *::after { transition: none !important; animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  .discovery-confirmation { animation: none; opacity: 1; }
 }

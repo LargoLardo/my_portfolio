@@ -34,7 +34,7 @@ export function makeDirtTexture(size = 512) {
       const radius = 8 + Math.cos(v) * 3
       const dust = fractal(Math.cos(u) * radius, Math.sin(u) * radius, Math.sin(v) * 3, 91)
       const grain = hash(x, y, 0, 91)
-      const value = 80 + dust * 75 + grain * 12
+      const value = 64 + dust * 95 + grain * 26
       const pixel = (y * size + x) * 4
       image.data[pixel] = value
       image.data[pixel + 1] = value * 0.76
@@ -43,6 +43,14 @@ export function makeDirtTexture(size = 512) {
     }
   }
   context.putImageData(image, 0, 0)
+  for (let i = 0; i < 4800; i += 1) {
+    const x = hash(i, 0, 0, 71) * size, y = hash(i, 1, 0, 71) * size
+    const radius = 0.3 + hash(i, 2, 0, 71) * 1.3
+    context.fillStyle = i % 3 ? '#34281f45' : '#e6cc9770'
+    context.beginPath()
+    context.ellipse(x, y, radius * 1.4, radius * 0.65, i, 0, Math.PI * 2)
+    context.fill()
+  }
   return canvas
 }
 
