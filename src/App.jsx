@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import './space.css'
+import { makeMoonTexture, makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
 import phonographSceneUrl from './assets/phonograph/scene.gltf?url'
@@ -54,7 +55,7 @@ const DISCOVERIES = [
     subtitle: 'External-sampling MCCFR solver for no-limit poker',
     color: '#8ef6a4',
     hex: 0x8ef6a4,
-    position: [56, 31, -65],
+    position: [36, 25, -72],
     radius: 4.2,
     palette: ['#324541', '#64746b', '#a7b5a2', '#d3ceae'],
     planetStyle: { rings: true, bands: true, ringTilt: 0.42 },
@@ -223,32 +224,6 @@ function terrainHeight(x, z) {
 
   const campFlatten = 1 - smoothstep(1.2, 6.2, Math.sqrt(x * x + z * z))
   return THREE.MathUtils.lerp(h, 0, campFlatten)
-}
-
-function makeMoonTexture(size = 512) {
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  const image = ctx.createImageData(size, size)
-  const data = image.data
-  const rand = seededRandom(91)
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const grain = rand() * 26
-      const wave = Math.sin(x * 0.057) * 8 + Math.sin((x + y) * 0.018) * 10
-      const dust = 108 + grain + wave
-      const idx = (y * size + x) * 4
-      data[idx] = dust * 0.86
-      data[idx + 1] = dust * 0.84
-      data[idx + 2] = dust * 0.78
-      data[idx + 3] = 255
-    }
-  }
-
-  ctx.putImageData(image, 0, 0)
-  return canvas
 }
 
 function makeWoodGrainTexture(seed = 1, width = 512, height = 128) {
@@ -429,14 +404,26 @@ function disposeScene(scene, renderer) {
 }
 
 function Panel({ discovery, onClose }) {
+  const closeRef = useRef(null)
+  useEffect(() => {
+    if (!discovery) return undefined
+    const previousFocus = document.activeElement
+    closeRef.current?.focus({ preventScroll: true })
+    return () => {
+      const target = previousFocus?.isConnected && !previousFocus.closest('[inert]')
+        ? previousFocus : document.querySelector('.sections-button')
+      target?.focus({ preventScroll: true })
+    }
+  }, [discovery])
   if (!discovery) return null
 
   return (
-    <aside className="discovery-panel" style={{ '--accent': discovery.color }}>
-      <button className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
-        x
+    <aside className="discovery-panel" aria-label={discovery.title} style={{ '--accent': discovery.color }}>
+      <button ref={closeRef} className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
+        ×
       </button>
-      <p className="panel-signal">{discovery.signal}</p>
+      <p className="panel-eyebrow">FIELD NOTES / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
+      <p className="panel-signal"><span />{discovery.world} · {discovery.signal}</p>
       <h1>{discovery.title}</h1>
       <p className="panel-subtitle">{discovery.subtitle}</p>
       <div className="panel-body">
@@ -463,29 +450,34 @@ function Panel({ discovery, onClose }) {
 }
 
 function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
+  const closeRef = useRef(null)
+  useEffect(() => {
+    if (open) closeRef.current?.focus({ preventScroll: true })
+  }, [open])
   const egoSections = EGO_SECTION_TITLES.map((title) => DISCOVERIES.find((discovery) => discovery.title === title)).filter(Boolean)
   const projectSections = DISCOVERIES.filter((discovery) => !EGO_SECTION_TITLE_SET.has(discovery.title))
   const sidebarGroups = [
-    ['Ego System', egoSections],
-    ['Project System', projectSections],
+    ['The explorer', egoSections],
+    ['Projects & experiments', projectSections],
   ]
 
   return (
-    <aside className={`section-sidebar ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+    <aside id="field-log" className={`section-sidebar ${open ? 'is-open' : ''}`} aria-label="Field log" aria-hidden={!open} inert={!open}>
       <div className="section-sidebar-header">
         <div>
-          <span>DIRECTORY</span>
-          <strong>Portfolio Sections</strong>
+          <span>EXPEDITION DIRECTORY / 08</span>
+          <strong>Field log</strong>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close sections">
-          x
+        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close field log">
+          ×
         </button>
       </div>
+      <p className="section-intro">Every signal has a story. Choose a destination.</p>
 
       <div className="section-list">
         {sidebarGroups.map(([groupName, discoveries]) => (
           <div className="section-group" key={groupName}>
-            <p className="section-group-label">{groupName}:</p>
+            <p className="section-group-label">{groupName}</p>
             {discoveries.map((discovery) => (
               <button
                 className={activeId === discovery.id ? 'is-active' : ''}
@@ -494,7 +486,8 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
                 onClick={() => onSelect(discovery.id)}
                 style={{ '--accent': discovery.color }}
               >
-                <span>{discovery.world}</span>
+                <span className="destination-orb" aria-hidden="true" />
+                <span className="destination-name">{discovery.world}</span>
                 <strong>{discovery.title}</strong>
                 <small>{discovery.subtitle}</small>
               </button>
@@ -508,6 +501,9 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
 
 export default function App() {
   const mountRef = useRef(null)
+  const directoryButtonRef = useRef(null)
+  const helpButtonRef = useRef(null)
+  const helpCloseRef = useRef(null)
   const cursorRef = useRef(null)
   const scopeActiveRef = useRef(false)
   const discoveredIdsRef = useRef(new Set())
@@ -577,10 +573,15 @@ export default function App() {
   const selectDiscovery = useCallback(
     (id) => {
       cameraTargetRef.current = id
+      setSidebarOpen(false)
       revealDiscovery(id)
     },
     [revealDiscovery],
   )
+
+  useEffect(() => {
+    if (signPanelOpen) helpCloseRef.current?.focus({ preventScroll: true })
+  }, [signPanelOpen])
 
   useEffect(() => {
     if (!ignited || !controlsVisible) return undefined
@@ -652,11 +653,11 @@ export default function App() {
     })
     moonMaterial.map.wrapS = THREE.RepeatWrapping
     moonMaterial.map.wrapT = THREE.RepeatWrapping
-    moonMaterial.map.repeat.set(18, 18)
+    moonMaterial.map.repeat.set(7, 7)
     moonMaterial.map.colorSpace = THREE.SRGBColorSpace
     moonMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     moonMaterial.bumpMap = moonMaterial.map
-    moonMaterial.bumpScale = 0.055
+    moonMaterial.bumpScale = 0.028
 
     const groundGeometry = new THREE.PlaneGeometry(120, 120, 176, 176)
     const groundPositions = groundGeometry.attributes.position
@@ -1251,6 +1252,8 @@ export default function App() {
     const interactionCenter = new THREE.Vector3()
     const pressed = new Set()
     const velocity = new THREE.Vector3()
+    const desiredVelocity = new THREE.Vector3()
+    const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ')
     const forward = new THREE.Vector3()
     const right = new THREE.Vector3()
     const drag = {
@@ -1263,6 +1266,8 @@ export default function App() {
 
     let yaw = 0
     let pitch = -0.1
+    let viewYaw = yaw
+    let viewPitch = pitch
     let cameraPanTarget = null
     let localFocus = null
     let scopeHoldTarget = null
@@ -1270,7 +1275,8 @@ export default function App() {
     let scopeAutoOpenedTarget = null
     const scopeSparkTimes = new Map()
     let hasSetIgnited = false
-    let lastTime = performance.now()
+    const startTime = performance.now()
+    let lastTime = startTime
     let raf = 0
 
     const triggerScopeDiscovery = (id, elapsed) => {
@@ -1444,6 +1450,11 @@ export default function App() {
     }
 
     const onPointerHover = (event) => {
+      if (event.target !== renderer.domElement) {
+        setSignPromptAvailable(false)
+        setPhonographPromptAvailable(false)
+        return
+      }
       const signAvailable = isReadableSignAtPointer(event)
       setSignPromptAvailable(signAvailable)
       setPhonographPromptAvailable(!signAvailable && isSkippableRecordAtPointer(event))
@@ -1457,6 +1468,7 @@ export default function App() {
 
       if (event.button !== 0) return
 
+      mount.focus({ preventScroll: true })
       drag.active = true
       drag.pointerId = event.pointerId
       drag.x = event.clientX
@@ -1508,13 +1520,17 @@ export default function App() {
     const onContextMenu = (event) => event.preventDefault()
 
     const onKeyDown = (event) => {
-      if (event.repeat && event.code !== 'Space') return
+      if (event.repeat) return
       if (event.code === 'Escape') {
         setActiveDiscovery(null)
         setSidebarOpen(false)
         setSignPanelOpen(false)
         setScopeActive(false)
+        mount.focus({ preventScroll: true })
+        return
       }
+      if (event.target.closest('button, a, aside')) return
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
       if (event.code === 'Space') {
         event.preventDefault()
         setScopeActive(true)
@@ -1529,7 +1545,7 @@ export default function App() {
     }
 
     const onKeyUp = (event) => {
-      if (event.code === 'Space') {
+      if (event.code === 'Space' && pressed.has('Space')) {
         event.preventDefault()
         setScopeActive(false)
       }
@@ -1538,6 +1554,9 @@ export default function App() {
 
     const onBlur = () => {
       pressed.clear()
+      velocity.set(0, 0, 0)
+      drag.active = false
+      drag.pointerId = null
       setScopeActive(false)
     }
 
@@ -1551,7 +1570,8 @@ export default function App() {
 
     mount.addEventListener('pointerdown', onPointerDown)
     mount.addEventListener('pointermove', onPointerMove)
-    mount.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointerup', onPointerUp)
+    mount.addEventListener('pointercancel', onBlur)
     mount.addEventListener('pointerleave', onPointerLeave)
     mount.addEventListener('contextmenu', onContextMenu)
     window.addEventListener('pointermove', onPointerHover)
@@ -1562,10 +1582,10 @@ export default function App() {
 
     const tick = (time) => {
       raf = requestAnimationFrame(tick)
-      const elapsed = time * 0.001
+      const elapsed = (time - startTime) * 0.001
       const dt = Math.min(0.04, (time - lastTime) * 0.001)
       lastTime = time
-      const ignition = smoothstep(0.85, 2.65, elapsed)
+      const ignition = smoothstep(0, 1.6, elapsed)
       const firePulse = 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
@@ -1595,7 +1615,7 @@ export default function App() {
           (audioMutedRef.current ? 0 : recordMaxVolume) *
           fadeAmount *
           THREE.MathUtils.clamp(1 - (recordDistance - 1) / 8, 0.1, 1)
-        recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 0.055)
+        recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 1 - Math.exp(-dt * 3.4))
       }
 
       sparks.material.opacity = ignition * 0.88
@@ -1654,26 +1674,29 @@ export default function App() {
         }
       }
 
-      const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ')
-      camera.quaternion.setFromEuler(euler)
+      const lookEase = 1 - Math.exp(-dt * 22)
+      viewYaw += shortestAngleDelta(viewYaw, yaw) * lookEase
+      viewPitch = THREE.MathUtils.lerp(viewPitch, pitch, lookEase)
+      camera.quaternion.setFromEuler(viewEuler.set(viewPitch, viewYaw, 0))
       forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
       forward.y = 0
       forward.normalize()
       right.crossVectors(forward, UP).normalize()
-      velocity.set(0, 0, 0)
+      desiredVelocity.set(0, 0, 0)
 
-      if (pressed.has('KeyW') || pressed.has('ArrowUp')) velocity.add(forward)
-      if (pressed.has('KeyS') || pressed.has('ArrowDown')) velocity.sub(forward)
-      if (pressed.has('KeyD') || pressed.has('ArrowRight')) velocity.add(right)
-      if (pressed.has('KeyA') || pressed.has('ArrowLeft')) velocity.sub(right)
+      if (pressed.has('KeyW') || pressed.has('ArrowUp')) desiredVelocity.add(forward)
+      if (pressed.has('KeyS') || pressed.has('ArrowDown')) desiredVelocity.sub(forward)
+      if (pressed.has('KeyD') || pressed.has('ArrowRight')) desiredVelocity.add(right)
+      if (pressed.has('KeyA') || pressed.has('ArrowLeft')) desiredVelocity.sub(right)
 
-      if (velocity.lengthSq() > 0) {
-        velocity.normalize().multiplyScalar((scopeActiveRef.current ? 1.05 : 1.85) * dt)
-        camera.position.add(velocity)
+      desiredVelocity.normalize().multiplyScalar(scopeActiveRef.current ? 1.05 : 1.85)
+      velocity.lerp(desiredVelocity, 1 - Math.exp(-dt * 12))
+      if (velocity.lengthSq() > 0.00001) {
+        camera.position.addScaledVector(velocity, dt)
         clampPlayer()
       }
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : 68, 0.12)
+      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : 68, 1 - Math.exp(-dt * 9))
       camera.updateProjectionMatrix()
 
       stars.position.copy(camera.position)
@@ -1701,9 +1724,9 @@ export default function App() {
         const fade = Math.pow(1 - life, 2.15) * (0.85 + flare * 1.1) * (0.76 + Math.sin(elapsed * 24 + i) * 0.24)
         activeBurstParticles = activeBurstParticles || fade > 0.01
 
-        burstVelocities[i * 3] *= 0.992
-        burstVelocities[i * 3 + 1] *= 0.992
-        burstVelocities[i * 3 + 2] *= 0.992
+        burstVelocities[i * 3] *= Math.exp(-dt * 0.48)
+        burstVelocities[i * 3 + 1] *= Math.exp(-dt * 0.48)
+        burstVelocities[i * 3 + 2] *= Math.exp(-dt * 0.48)
         burstPositions[i * 3] += burstVelocities[i * 3] * dt
         burstPositions[i * 3 + 1] += burstVelocities[i * 3 + 1] * dt
         burstPositions[i * 3 + 2] += burstVelocities[i * 3 + 2] * dt
@@ -1713,7 +1736,7 @@ export default function App() {
       }
       burstGeometry.attributes.position.needsUpdate = burstParticlesChanged
       burstGeometry.attributes.color.needsUpdate = burstParticlesChanged
-      burstParticles.material.opacity = THREE.MathUtils.lerp(burstParticles.material.opacity, activeBurstParticles ? 1 : 0, 0.08)
+      burstParticles.material.opacity = THREE.MathUtils.lerp(burstParticles.material.opacity, activeBurstParticles ? 1 : 0, 1 - Math.exp(-dt * 5))
 
       raycaster.setFromCamera(center, camera)
       const hits = raycaster.intersectObjects(planetMeshes, false)
@@ -1767,7 +1790,7 @@ export default function App() {
         if (decorRing) decorRing.scale.copy(planet.scale)
       })
 
-      if (elapsed > 2.9 && !hasSetIgnited) {
+      if (elapsed > 1.2 && !hasSetIgnited) {
         hasSetIgnited = true
         setIgnited(true)
       }
@@ -1792,7 +1815,8 @@ export default function App() {
       }
       mount.removeEventListener('pointerdown', onPointerDown)
       mount.removeEventListener('pointermove', onPointerMove)
-      mount.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointerup', onPointerUp)
+      mount.removeEventListener('pointercancel', onBlur)
       mount.removeEventListener('pointerleave', onPointerLeave)
       mount.removeEventListener('contextmenu', onContextMenu)
       window.removeEventListener('pointermove', onPointerHover)
@@ -1820,47 +1844,54 @@ export default function App() {
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
-      <div ref={mountRef} className="scene-mount" />
+      <div ref={mountRef} className="scene-mount" tabIndex={0} role="region" aria-label="Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard." />
 
       <div className="darkness" aria-hidden="true" />
       <div className="boot-title" aria-hidden="true">
-        logan&apos;s portfolio
+        ESTABLISHING UPLINK
       </div>
       <div className="vignette" aria-hidden="true" />
 
       <div ref={cursorRef} className={`reticle ${cursorPrompt ? 'is-showing-prompt' : ''}`} aria-hidden="true">
-        <span className="reticle-dot" />
         <span className="reticle-prompt">{cursorPrompt}</span>
       </div>
 
       <header className="hud-brand">
-        <span>LOGAN ZHAO'S <strong>PORTFOLIO</strong></span>
+        <a href="/" aria-label="Return to Logan Zhao's main portfolio">
+          <span className="expedition-mark" aria-hidden="true">LZ</span>
+          <span><small>AN EXPLORER'S PORTFOLIO</small><strong>Logan Zhao</strong></span>
+          <span className="return-arrow" aria-hidden="true">↗</span>
+        </a>
       </header>
 
+      <nav className="hud-actions" aria-label="Exploration tools">
       <button
+        ref={directoryButtonRef}
         className="sections-button"
         type="button"
+        aria-controls="field-log"
         aria-expanded={sidebarOpen}
-        onClick={() => setSidebarOpen((open) => !open)}
+        onClick={() => {
+          setActiveDiscovery(null)
+          setSignPanelOpen(false)
+          setScopeActive(false)
+          setSidebarOpen((open) => !open)
+        }}
       >
-        PLANETS
+        <span aria-hidden="true">☷</span> Field log <small>08</small>
       </button>
 
       <button
         className="scope-button"
         type="button"
         aria-pressed={scopeActiveState}
-        onMouseDown={() => setScopeActive(true)}
-        onMouseUp={() => setScopeActive(false)}
-        onMouseLeave={() => setScopeActive(false)}
-        onTouchStart={(event) => {
-          event.preventDefault()
-          setScopeActive(true)
-        }}
-        onTouchEnd={() => setScopeActive(false)}
+        onClick={() => setScopeActive(!scopeActiveState)}
       >
-        SCOPE
+        <span className="scope-icon" aria-hidden="true" /> Signalscope
       </button>
+      </nav>
+
+      <button ref={helpButtonRef} className="help-button" type="button" aria-label="Show exploration controls" aria-expanded={signPanelOpen} aria-controls="explorer-guide" onClick={() => setSignPanelOpen((open) => !open)}>?</button>
 
       <button
         className="audio-button"
@@ -1892,26 +1923,33 @@ export default function App() {
       )}
 
       <div className={`controls-hud ${controlsVisible ? 'is-visible' : ''}`} aria-label="Controls">
-        <span>DRAG LOOK | </span>
-        <span>WASD MOVE | </span>
-        <span>SPACE TO SCOPE IN</span>
+        <p>FIELD STATION 01 <span> / </span> LOOK UP. STAY CURIOUS.</p>
+        <div><span><kbd>DRAG</kbd> look around</span><span className="desktop-control"><kbd>W A S D</kbd> explore</span><span className="desktop-control"><kbd>SPACE</kbd> hold to scan</span><span className="touch-control">Tap Signalscope to scan a planet</span></div>
       </div>
 
-      <aside className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Sign instructions">
-        <button className="sign-help-close" type="button" onClick={() => setSignPanelOpen(false)} aria-label="Close sign">
-          x
+      <aside id="explorer-guide" className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Explorer guide" aria-hidden={!signPanelOpen} inert={!signPanelOpen}>
+        <button ref={helpCloseRef} className="sign-help-close" type="button" onClick={() => {
+          setSignPanelOpen(false)
+          helpButtonRef.current?.focus({ preventScroll: true })
+        }} aria-label="Close sign">
+          ×
         </button>
-        <h2>Controls</h2>
-        <p>Hold Space, right mouse, or the Scope button to scan the sky.</p>
-        <p>Aim the scope at a signal until a planet wakes up, then click discovered planets to open portfolio sections.</p>
-        <p>The PLANETS button lists every destination for easier portfolio access.</p>
+        <span className="panel-eyebrow">FIELD MANUAL / 01</span>
+        <h2>A little curiosity goes a long way.</h2>
+        <p>Drag to look around. Use WASD or arrow keys to walk around the campfire.</p>
+        <p>Hold Space or the right mouse button to scan. On touch screens, tap Signalscope, then drag to aim.</p>
+        <p>Keep a planet in the center of the scope to open its story. Field log takes you directly to any destination.</p>
+        <p>Click the phonograph to change the music. Press Escape to close a panel.</p>
       </aside>
 
       <PortfolioSidebar
         open={sidebarOpen}
         activeId={activeDiscovery}
         onSelect={selectDiscovery}
-        onClose={() => setSidebarOpen(false)}
+        onClose={() => {
+          setSidebarOpen(false)
+          directoryButtonRef.current?.focus({ preventScroll: true })
+        }}
       />
       <Panel discovery={activeData} onClose={() => setActiveDiscovery(null)} />
     </main>

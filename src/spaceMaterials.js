@@ -21,6 +21,31 @@ function fractal(x, y, z, seed) {
   return noise(x, y, z, seed) * 0.56 + noise(x * 2.1, y * 2.1, z * 2.1, seed) * 0.28 + noise(x * 4.3, y * 4.3, z * 4.3, seed) * 0.16
 }
 
+export function makeMoonTexture(size = 512) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const context = canvas.getContext('2d')
+  const image = context.createImageData(size, size)
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      // Sampling a torus keeps both edges seamless when the ground texture repeats.
+      const u = x / size * Math.PI * 2
+      const v = y / size * Math.PI * 2
+      const radius = 8 + Math.cos(v) * 3
+      const dust = fractal(Math.cos(u) * radius, Math.sin(u) * radius, Math.sin(v) * 3, 91)
+      const grain = hash(x, y, 0, 91)
+      const value = 115 + dust * 42 + grain * 18
+      const pixel = (y * size + x) * 4
+      image.data[pixel] = value
+      image.data[pixel + 1] = value * 0.98
+      image.data[pixel + 2] = value * 0.93
+      image.data[pixel + 3] = 255
+    }
+  }
+  context.putImageData(image, 0, 0)
+  return canvas
+}
+
 export function makePlanetTexture(palette, seed, style = {}, width = 512, height = 256) {
   const canvas = document.createElement('canvas')
   canvas.width = width
