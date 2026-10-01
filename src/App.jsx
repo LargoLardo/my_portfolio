@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { makePlanetTexture, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
 import phonographSceneUrl from './assets/phonograph/scene.gltf?url'
@@ -35,10 +36,10 @@ const DISCOVERIES = [
     subtitle: 'Systems Design Engineering student at the University of Waterloo',
     color: '#7bdff2',
     hex: 0x7bdff2,
-    position: [-34, 30, -66],
-    radius: 3.15,
-    palette: ['#22314f', '#476d89', '#9ed4d7', '#d8b56c'],
-    planetStyle: { bands: true, spots: 3 },
+    position: [-31, 23, -75],
+    radius: 4.6,
+    palette: ['#172e3c', '#34576b', '#799488', '#d3d5bd'],
+    planetStyle: { spots: 3 },
     body: [
       'I am a Waterloo Systems Design Engineering student aiming toward machine learning, applied AI, and intelligent tools that turn messy inputs into useful systems.',
       'The thread through my work is creation through algorithmic design: reconstruction pipelines, game-playing agents, evolutionary search, and interfaces that make complex systems feel explorable.',
@@ -53,9 +54,9 @@ const DISCOVERIES = [
     subtitle: 'External-sampling MCCFR solver for no-limit poker',
     color: '#8ef6a4',
     hex: 0x8ef6a4,
-    position: [68, 38, -24],
-    radius: 2.85,
-    palette: ['#071c3d', '#115d7e', '#5fb7a1', '#e7efe2'],
+    position: [56, 31, -65],
+    radius: 4.2,
+    palette: ['#324541', '#64746b', '#a7b5a2', '#d3ceae'],
     planetStyle: { rings: true, bands: true, ringTilt: 0.42 },
     body: [
       "Built a heads-up no-limit Texas Hold'em AI and solver that trained a policy capable of winning more than 10BB/hr against basic heuristics using external-sampling MCCFR with regret matching.",
@@ -74,7 +75,7 @@ const DISCOVERIES = [
     hex: 0xffbd6b,
     position: [46, 54, 54],
     radius: 2.5,
-    palette: ['#1d1609', '#7b3f1d', '#e39b3f', '#f6df9c'],
+    palette: ['#4a3025', '#825940', '#b68d69', '#dbbe95'],
     planetStyle: { spots: 7, cracked: true },
     body: [
       'Engineered an end-to-end app pipeline that converts iPhone videos into VR-ready Gaussian splats, coordinating a 9-stage workflow across SwiftUI, FastAPI, COLMAP, FastGS, and Unity.',
@@ -204,7 +205,9 @@ function smoothstep(edge0, edge1, value) {
 
 function terrainHeight(x, z) {
   const ripples = Math.sin(x * 0.33 + z * 0.18) * 0.045 + Math.sin(z * 0.47) * 0.035
-  let h = ripples
+  const distance = Math.hypot(x, z)
+  const ridge = smoothstep(14, 48, distance) * (1.6 + Math.sin(x * 0.12 + z * 0.08) * 1.2 + Math.sin(z * 0.18 - x * 0.07) * 0.7)
+  let h = ripples + ridge
 
   for (const crater of terrainCraters) {
     const dx = x - crater.x
@@ -245,98 +248,6 @@ function makeMoonTexture(size = 512) {
   }
 
   ctx.putImageData(image, 0, 0)
-  return canvas
-}
-
-function makePlanetTexture(palette, seed, style = {}, width = 512, height = 256) {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  const gradient = ctx.createLinearGradient(0, 0, width, height)
-
-  palette.forEach((color, index) => {
-    gradient.addColorStop(index / Math.max(1, palette.length - 1), color)
-  })
-
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, width, height)
-
-  if (style.bands) {
-    for (let y = 0; y < height; y += 1) {
-      const wave = Math.sin(y * 0.045 + seed) * 0.5 + Math.sin(y * 0.12) * 0.25
-      const alpha = 0.06 + Math.abs(wave) * 0.14
-      ctx.fillStyle = wave > 0 ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`
-      ctx.fillRect(0, y, width, 1)
-    }
-  }
-
-  ctx.globalCompositeOperation = 'multiply'
-
-  const rand = seededRandom(seed)
-  for (let i = 0; i < 180; i += 1) {
-    const y = rand() * height
-    const h = 3 + rand() * 22
-    const alpha = 0.045 + rand() * 0.15
-    ctx.fillStyle = `rgba(${60 + rand() * 120}, ${70 + rand() * 120}, ${80 + rand() * 120}, ${alpha})`
-    ctx.fillRect(0, y, width, h)
-  }
-
-  if (style.cracked) {
-    ctx.globalCompositeOperation = 'screen'
-    ctx.strokeStyle = 'rgba(255, 202, 126, 0.28)'
-    ctx.lineWidth = 2
-
-    for (let i = 0; i < 12; i += 1) {
-      let x = rand() * width
-      let y = rand() * height
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-
-      for (let j = 0; j < 6; j += 1) {
-        x += (rand() - 0.5) * 56
-        y += (rand() - 0.5) * 32
-        ctx.lineTo(x, y)
-      }
-
-      ctx.stroke()
-    }
-  }
-
-  ctx.globalCompositeOperation = 'screen'
-  for (let i = 0; i < (style.spots ?? 0); i += 1) {
-    const x = rand() * width
-    const y = height * (0.24 + rand() * 0.52)
-    const rx = 18 + rand() * 52
-    const ry = 9 + rand() * 24
-    const spot = ctx.createRadialGradient(x, y, 0, x, y, rx)
-    spot.addColorStop(0, 'rgba(255,255,255,0.28)')
-    spot.addColorStop(0.45, 'rgba(255,255,255,0.08)')
-    spot.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.scale(1, ry / rx)
-    ctx.fillStyle = spot
-    ctx.beginPath()
-    ctx.arc(0, 0, rx, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-  }
-
-  for (let i = 0; i < 36; i += 1) {
-    const x = rand() * width
-    const y = rand() * height
-    const r = 8 + rand() * 44
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, r)
-    glow.addColorStop(0, 'rgba(255,255,255,0.16)')
-    glow.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.fillStyle = glow
-    ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  ctx.globalCompositeOperation = 'source-over'
   return canvas
 }
 
@@ -424,25 +335,6 @@ function createWoodMaterial(seed, color, repeatX = 2.2, repeatY = 1) {
     roughness: 0.96,
     metalness: 0,
   })
-}
-
-function makeMusicNoteTexture(size = 128) {
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-
-  ctx.clearRect(0, 0, size, size)
-  ctx.font = 'bold 92px Georgia, "Times New Roman", serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#f5d58a'
-  ctx.strokeStyle = 'rgba(25, 15, 6, 0.62)'
-  ctx.lineWidth = 7
-  ctx.strokeText('♪', size / 2, size / 2)
-  ctx.fillText('♪', size / 2, size / 2)
-
-  return canvas
 }
 
 function loadRecordTracks() {
@@ -732,35 +624,45 @@ export default function App() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(mount.clientWidth, mount.clientHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.15
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000000)
-    scene.fog = new THREE.FogExp2(0x020202, 0.018)
+    scene.background = new THREE.Color(0x030609)
+    scene.fog = new THREE.FogExp2(0x070c12, 0.011)
 
     const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 220)
     camera.position.set(0, EYE_HEIGHT, 4.15)
 
-    const ambient = new THREE.HemisphereLight(0x090b12, 0x0a0704, 0.04)
+    const ambient = new THREE.HemisphereLight(0x9eacc4, 0x302b23, 0.3)
     scene.add(ambient)
+    const sunlight = new THREE.DirectionalLight(0xd5dded, 2.1)
+    sunlight.position.set(-35, 45, 25)
+    scene.add(sunlight)
+    const particleTexture = makeParticleTexture()
 
     const moonMaterial = new THREE.MeshStandardMaterial({
       map: new THREE.CanvasTexture(makeMoonTexture()),
-      color: 0x9a948a,
+      color: 0x918c80,
       roughness: 1,
       metalness: 0,
     })
     moonMaterial.map.wrapS = THREE.RepeatWrapping
     moonMaterial.map.wrapT = THREE.RepeatWrapping
-    moonMaterial.map.repeat.set(11, 11)
+    moonMaterial.map.repeat.set(18, 18)
+    moonMaterial.map.colorSpace = THREE.SRGBColorSpace
+    moonMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    moonMaterial.bumpMap = moonMaterial.map
+    moonMaterial.bumpScale = 0.055
 
     const groundGeometry = new THREE.PlaneGeometry(120, 120, 176, 176)
     const groundPositions = groundGeometry.attributes.position
     for (let i = 0; i < groundPositions.count; i += 1) {
       const x = groundPositions.getX(i)
-      const z = groundPositions.getY(i)
+      const z = -groundPositions.getY(i)
       groundPositions.setZ(i, terrainHeight(x, z))
     }
     groundGeometry.computeVertexNormals()
@@ -771,8 +673,8 @@ export default function App() {
     scene.add(ground)
 
     const rocks = new THREE.Group()
-    const rockGeometry = new THREE.DodecahedronGeometry(0.24, 0)
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x69645c, roughness: 0.96 })
+    const rockGeometry = new THREE.IcosahedronGeometry(0.24, 1)
+    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x74756e, map: moonMaterial.map, roughness: 0.96 })
     const rockRand = seededRandom(244)
 
     for (let i = 0; i < 82; i += 1) {
@@ -796,7 +698,7 @@ export default function App() {
     scene.add(rocks)
 
     const starGeometry = new THREE.BufferGeometry()
-    const starCount = 800
+    const starCount = 1500
     const starRadiusConst = 70
     const starPositions = new Float32Array(starCount * 3)
     const starColors = new Float32Array(starCount * 3)
@@ -809,7 +711,7 @@ export default function App() {
       const y = Math.cos(phi) * radius
       const x = Math.sin(phi) * Math.cos(theta) * radius
       const z = Math.sin(phi) * Math.sin(theta) * radius
-      const brightness = 0.16 + starRand() * 0.22
+      const brightness = 0.32 + starRand() * 0.5
       const cold = starRand() > 0.28
 
       starPositions[i * 3] = x
@@ -825,10 +727,11 @@ export default function App() {
     const stars = new THREE.Points(
       starGeometry,
       new THREE.PointsMaterial({
-        size: 0.72,
+        size: 0.18,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.8,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         fog: false,
@@ -863,148 +766,17 @@ export default function App() {
     const anchorStars = new THREE.Points(
       anchorStarGeometry,
       new THREE.PointsMaterial({
-        size: 1.35,
+        size: 0.38,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.72,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         fog: false,
       }),
     )
     scene.add(anchorStars)
-
-    const constellationGroup = new THREE.Group()
-    const guideStarPositions = new Float32Array([
-      -34, 44, -82,
-      -25, 52, -89,
-      -12, 48, -84,
-      -2, 58, -92,
-      9, 53, -86,
-      75, 36, -18,
-      84, 46, -5,
-      78, 56, 10,
-      90, 42, 22,
-      69, 50, 30,
-      31, 39, 78,
-      16, 52, 86,
-      -2, 48, 82,
-      -18, 58, 90,
-      -34, 44, 76,
-      -78, 34, 20,
-      -90, 47, 7,
-      -84, 55, -10,
-      -70, 43, -28,
-      -92, 60, -35,
-      -18, 72, -34,
-      0, 82, -12,
-      22, 76, 4,
-      8, 88, 32,
-      -20, 80, 24,
-    ])
-    const guideStarGeometry = new THREE.BufferGeometry()
-    guideStarGeometry.setAttribute('position', new THREE.BufferAttribute(guideStarPositions, 3))
-    const guideStars = new THREE.Points(
-      guideStarGeometry,
-      new THREE.PointsMaterial({
-        color: 0xf7efd2,
-        size: 1.45,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        fog: false,
-      }),
-    )
-    constellationGroup.add(guideStars)
-
-    const constellationPairs = [
-      [0, 1],
-      [1, 2],
-      [0, 2],
-      [2, 3],
-      [2, 4],
-      [3, 4],
-      [5, 6],
-      [6, 7],
-      [7, 8],
-      [7, 9],
-      [10, 11],
-      [11, 12],
-      [12, 13],
-      [12, 14],
-      [15, 16],
-      [16, 17],
-      [17, 18],
-      [17, 19],
-      [20, 21],
-      [21, 22],
-      [22, 23],
-      [23, 24],
-      [20, 24],
-    ]
-    const constellationLines = new Float32Array(constellationPairs.length * 6)
-    constellationPairs.forEach(([from, to], index) => {
-      for (let axis = 0; axis < 3; axis += 1) {
-        constellationLines[index * 6 + axis] = guideStarPositions[from * 3 + axis]
-        constellationLines[index * 6 + 3 + axis] = guideStarPositions[to * 3 + axis]
-      }
-    })
-    const constellationGeometry = new THREE.BufferGeometry()
-    constellationGeometry.setAttribute('position', new THREE.BufferAttribute(constellationLines, 3))
-    const constellationBeamMaterial = new THREE.MeshBasicMaterial({
-      color: 0x8be8ff,
-      transparent: true,
-      opacity: 0.06,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    })
-    constellationPairs.forEach(([from, to]) => {
-      const start = new THREE.Vector3(
-        guideStarPositions[from * 3],
-        guideStarPositions[from * 3 + 1],
-        guideStarPositions[from * 3 + 2],
-      )
-      const end = new THREE.Vector3(
-        guideStarPositions[to * 3],
-        guideStarPositions[to * 3 + 1],
-        guideStarPositions[to * 3 + 2],
-      )
-      const direction = end.clone().sub(start)
-      const length = direction.length()
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, length, 8, 1, true), constellationBeamMaterial)
-      beam.position.copy(start).add(end).multiplyScalar(0.5)
-      beam.quaternion.setFromUnitVectors(UP, direction.normalize())
-      constellationGroup.add(beam)
-    })
-    constellationGroup.add(
-      new THREE.LineSegments(
-        constellationGeometry,
-        new THREE.LineBasicMaterial({
-          color: 0x5fbfff,
-          transparent: true,
-          opacity: 0.1,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          fog: false,
-        }),
-      ),
-    )
-    constellationGroup.add(
-      new THREE.LineSegments(
-        constellationGeometry,
-        new THREE.LineBasicMaterial({
-          color: 0x9bdfff,
-          transparent: true,
-          opacity: 0.18,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          fog: false,
-        }),
-      ),
-    )
-    scene.add(constellationGroup)
 
     const campfire = new THREE.Group()
     scene.add(campfire)
@@ -1027,12 +799,7 @@ export default function App() {
     }
 
     const logGeometry = new THREE.CylinderGeometry(0.095, 0.13, 1.28, 14)
-    const logMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a2514,
-      roughness: 0.9,
-      emissive: 0x240804,
-      emissiveIntensity: 0.08,
-    })
+    const logMaterial = createWoodMaterial(431, 0x38291d, 1, 3)
     for (let i = 0; i < 5; i += 1) {
       const log = new THREE.Mesh(logGeometry, logMaterial)
       log.position.set(0, 0.18 + i * 0.018, 0)
@@ -1043,8 +810,8 @@ export default function App() {
       campfire.add(log)
     }
 
-    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x8a8177, roughness: 1 })
-    const stoneGeometry = new THREE.DodecahedronGeometry(0.18, 0)
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x85817a, map: moonMaterial.map, bumpMap: moonMaterial.map, bumpScale: 0.025, roughness: 1 })
+    const stoneGeometry = new THREE.IcosahedronGeometry(0.18, 1)
     for (let i = 0; i < 18; i += 1) {
       const angle = (i / 18) * Math.PI * 2
       const stone = new THREE.Mesh(stoneGeometry, stoneMaterial)
@@ -1063,164 +830,65 @@ export default function App() {
     signGroup.rotation.y = 0.18
     scene.add(signGroup)
 
-    const signTopPlankMaterial = createWoodMaterial(805, 0xb27445)
-    const signBottomPlankMaterial = createWoodMaterial(811, 0x965c34)
-    const signPostMaterial = createWoodMaterial(819, 0x75482b, 0.75, 2.8)
-    const signTextMaterial = new THREE.MeshBasicMaterial({
-      color: 0x050505,
-      toneMapped: false,
-      fog: false,
-    })
-    const signPostGeometry = new THREE.CylinderGeometry(0.055, 0.075, 1.05, 8)
-    const signPost = new THREE.Mesh(signPostGeometry, signPostMaterial)
-    signPost.position.set(-0.14, 0.42, -0.04)
-    signPost.rotation.z = -0.24
+    const signMetal = new THREE.MeshStandardMaterial({ color: 0x343d3b, roughness: 0.72, metalness: 0.45 })
+    const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.065, 1.15, 16), signMetal)
+    signPost.position.set(0, 0.5, 0)
     signPost.castShadow = true
-    signPost.receiveShadow = true
     signGroup.add(signPost)
 
     const signBoardGroup = new THREE.Group()
-    signBoardGroup.position.set(0, 0.91, 0)
-    signBoardGroup.rotation.z = -0.17
+    signBoardGroup.position.set(0, 1, 0)
+    signBoardGroup.rotation.z = -0.04
     signGroup.add(signBoardGroup)
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.72, 0.08), signMetal)
+    housing.castShadow = true
+    housing.receiveShadow = true
+    signBoardGroup.add(housing)
 
-    const topPlank = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.26, 0.1), signTopPlankMaterial)
-    topPlank.position.set(0.02, 0.08, 0)
-    topPlank.rotation.z = -0.025
-    topPlank.castShadow = true
-    topPlank.receiveShadow = true
-    signBoardGroup.add(topPlank)
-
-    const bottomPlank = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.3, 0.1), signBottomPlankMaterial)
-    bottomPlank.position.set(-0.04, -0.14, -0.006)
-    bottomPlank.rotation.z = 0.015
-    bottomPlank.castShadow = true
-    bottomPlank.receiveShadow = true
-    signBoardGroup.add(bottomPlank)
-
+    const label = document.createElement('canvas')
+    label.width = 1024
+    label.height = 384
+    const labelContext = label.getContext('2d')
+    labelContext.fillStyle = '#c9c7b4'
+    labelContext.fillRect(0, 0, 1024, 384)
+    labelContext.fillStyle = '#aa6338'
+    labelContext.fillRect(0, 0, 20, 384)
+    labelContext.fillStyle = '#363e39'
+    labelContext.font = '24px monospace'
+    labelContext.fillText('FIELD STATION 01 / EXPLORER GUIDE', 64, 65)
+    labelContext.fillRect(64, 90, 890, 2)
+    labelContext.font = 'bold 104px sans-serif'
+    labelContext.fillText('LOOK UP.', 58, 217)
+    labelContext.font = '28px monospace'
+    labelContext.fillText('HOLD SPACE TO SCAN', 64, 302)
+    labelContext.font = '18px monospace'
+    labelContext.fillText('DRAG TO LOOK / WASD TO EXPLORE', 64, 345)
+    const labelTexture = new THREE.CanvasTexture(label)
+    labelTexture.colorSpace = THREE.SRGBColorSpace
+    labelTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     const signInteractionMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.72, 0.48, 0.12),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        colorWrite: false,
-        side: THREE.DoubleSide,
-      }),
+      new THREE.PlaneGeometry(1.68, 0.63),
+      new THREE.MeshStandardMaterial({ map: labelTexture, roughness: 0.85, metalness: 0.1 }),
     )
     signInteractionMesh.geometry.computeBoundingBox()
-    signInteractionMesh.position.set(-0.01, -0.04, 0.07)
+    signInteractionMesh.position.z = 0.045
     signBoardGroup.add(signInteractionMesh)
-
-    const letterBarGeometry = new THREE.BoxGeometry(1, 1, 0.018)
-    const addLetterBar = (x, y, width, height, rotation = 0) => {
-      const bar = new THREE.Mesh(letterBarGeometry, signTextMaterial)
-      bar.position.set(x, y, 0.066)
-      bar.scale.set(width, height, 1)
-      bar.rotation.z = rotation
-      signBoardGroup.add(bar)
-    }
-    const addBlockLetter = (letter, x, y, scale = 1) => {
-      const t = 0.022 * scale
-      const w = 0.12 * scale
-      const h = 0.2 * scale
-      const halfW = w / 2
-      const halfH = h / 2
-
-      if (letter === 'L') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x - halfW / 2, y - halfH, w, t)
-      }
-      if (letter === 'O') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'K') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW * 0.35, y + halfH * 0.32, t, h * 0.62, -0.72)
-        addLetterBar(x + halfW * 0.35, y - halfH * 0.32, t, h * 0.62, 0.72)
-      }
-      if (letter === 'W') {
-        addLetterBar(x - halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x + halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x - halfW * 0.22, y - halfH * 0.34, t, h * 0.62, -0.36)
-        addLetterBar(x + halfW * 0.22, y - halfH * 0.34, t, h * 0.62, 0.36)
-      }
-      if (letter === 'I') {
-        addLetterBar(x, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'T') {
-        addLetterBar(x, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-      }
-      if (letter === 'H') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW, y, t, h)
-        addLetterBar(x, y, w, t)
-      }
-      if (letter === 'U') {
-        addLetterBar(x - halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x + halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'P') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x + halfW, y + halfH * 0.5, t, h * 0.5)
-      }
-      if (letter === 'S') {
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x, y - halfH, w, t)
-        addLetterBar(x - halfW, y + halfH * 0.5, t, h * 0.5)
-        addLetterBar(x + halfW, y - halfH * 0.5, t, h * 0.5)
-      }
-      if (letter === 'C') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'E') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x, y - halfH, w, t)
+    const boltGeometry = new THREE.SphereGeometry(0.022, 8, 6)
+    for (const x of [-0.85, 0.85]) {
+      for (const y of [-0.31, 0.31]) {
+        const bolt = new THREE.Mesh(boltGeometry, signMetal)
+        bolt.position.set(x, y, 0.045)
+        signBoardGroup.add(bolt)
       }
     }
-
-    const addBlockText = (text, y, scale) => {
-      const advance = 0.151 * scale
-      const spaceAdvance = 0.22 * scale
-      const width = [...text].reduce((total, letter) => total + (letter === ' ' ? spaceAdvance : advance), 0) - advance
-      let x = -width / 2
-
-      ;[...text].forEach((letter) => {
-        if (letter === ' ') {
-          x += spaceAdvance
-          return
-        }
-
-        addBlockLetter(letter, x, y, scale)
-        x += advance
-      })
-    }
-
-    addBlockText('LOOK UP', 0.08, 0.64)
-    addBlockText('WITH SCOPE', -0.15, 0.5)
 
     const recordX = 1.7
     const recordZ = -1.6
     const recordPlayer = new THREE.Group()
-    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.1, recordZ)
+    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) + 0.02, recordZ)
     const toSpawn = new THREE.Vector3(-recordX, 0, 4.15 - recordZ).normalize()
     recordPlayer.rotation.y = Math.atan2(-toSpawn.x, -toSpawn.z) - Math.PI / 6
-    recordPlayer.rotation.x = - Math.PI / 12
+    recordPlayer.rotation.x = 0
     scene.add(recordPlayer)
 
     const recordInteractionMesh = new THREE.Mesh(
@@ -1240,14 +908,6 @@ export default function App() {
 
     let phonographLoadCancelled = false
     let recordDisc = null
-    const hornMouth = new THREE.Object3D()
-    hornMouth.position.set(0, 1.15, -0.07)
-    recordPlayer.add(hornMouth)
-
-    const hornProjection = new THREE.Object3D()
-    hornProjection.position.set(0, 1.48, -0.42)
-    recordPlayer.add(hornProjection)
-
     const phonographManager = new THREE.LoadingManager()
     phonographManager.setURLModifier((url) => {
       const normalizedUrl = url.replace(/\\/g, '/')
@@ -1291,89 +951,7 @@ export default function App() {
       phonograph.updateWorldMatrix(true, true)
 
       recordDisc = phonograph.getObjectByName('record_2')
-      const hornNode = phonograph.getObjectByName('horn_5')
-      const hornMesh = phonograph.getObjectByName('Object_14')
-      if (hornNode && hornMesh?.geometry?.attributes.position) {
-        const positions = hornMesh.geometry.attributes.position
-        const bounds = hornMesh.geometry.boundingBox ?? new THREE.Box3().setFromBufferAttribute(positions)
-        const rimCenter = new THREE.Vector3()
-        let rimCount = 0
-
-        for (let i = 0; i < positions.count; i += 1) {
-          const vertex = new THREE.Vector3().fromBufferAttribute(positions, i)
-          if (vertex.z < bounds.min.z + 0.5) {
-            rimCenter.add(vertex)
-            rimCount += 1
-          }
-        }
-
-        if (rimCount > 0) {
-          rimCenter.multiplyScalar(1 / rimCount)
-          const mouthLocal = hornMesh.localToWorld(rimCenter.clone())
-          const throatLocal = hornNode.localToWorld(new THREE.Vector3())
-          recordPlayer.worldToLocal(mouthLocal)
-          recordPlayer.worldToLocal(throatLocal)
-
-          const exitDirection = mouthLocal.clone().sub(throatLocal).normalize()
-          hornMouth.position.copy(mouthLocal)
-          hornProjection.position.copy(mouthLocal).addScaledVector(exitDirection, 0.48)
-        }
-      }
     })
-
-    const musicNoteCount = 10
-    const noteTexture = new THREE.CanvasTexture(makeMusicNoteTexture())
-    noteTexture.colorSpace = THREE.SRGBColorSpace
-    const musicNoteSprites = []
-    const musicNoteAges = new Float32Array(musicNoteCount)
-    const musicNoteLifetimes = new Float32Array(musicNoteCount)
-    const musicNoteVelocities = Array.from({ length: musicNoteCount }, () => new THREE.Vector3())
-    const musicNoteRand = seededRandom(2841)
-    const hornOrigin = new THREE.Vector3()
-    const hornTip = new THREE.Vector3()
-    const hornDirection = new THREE.Vector3()
-    const musicNoteRight = new THREE.Vector3()
-    const musicNoteLift = new THREE.Vector3()
-
-    const respawnMusicNote = (index, randomizeAge = false) => {
-      hornMouth.getWorldPosition(hornOrigin)
-      hornProjection.getWorldPosition(hornTip)
-      hornDirection.copy(hornTip).sub(hornOrigin).normalize()
-      musicNoteRight.crossVectors(hornDirection, UP).normalize()
-      musicNoteLift.crossVectors(musicNoteRight, hornDirection).normalize()
-
-      const sprite = musicNoteSprites[index]
-      sprite.position.copy(hornOrigin)
-      sprite.position.addScaledVector(musicNoteRight, (musicNoteRand() - 0.5) * 0.22)
-      sprite.position.addScaledVector(musicNoteLift, (musicNoteRand() - 0.5) * 0.14)
-      sprite.position.y += (musicNoteRand() - 0.5) * 0.1
-      musicNoteVelocities[index]
-        .copy(hornDirection)
-        .multiplyScalar(0.2 + musicNoteRand() * 0.22)
-        .addScaledVector(UP, 0.18 + musicNoteRand() * 0.22)
-        .addScaledVector(musicNoteRight, (musicNoteRand() - 0.5) * 0.28)
-        .addScaledVector(musicNoteLift, (musicNoteRand() - 0.5) * 0.16)
-      musicNoteLifetimes[index] = 2.6 + musicNoteRand() * 1.7
-      musicNoteAges[index] = randomizeAge ? musicNoteRand() * musicNoteLifetimes[index] : 0
-    }
-
-    for (let i = 0; i < musicNoteCount; i += 1) {
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: noteTexture,
-          color: 0xf2d28a,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          fog: false,
-          toneMapped: false,
-        }),
-      )
-      sprite.scale.setScalar(0.2)
-      scene.add(sprite)
-      musicNoteSprites.push(sprite)
-      respawnMusicNote(i, true)
-    }
 
     let recordTracks = DEFAULT_RECORD_TRACKS
     let recordTrackIndex = 0
@@ -1460,52 +1038,26 @@ export default function App() {
     const flameGroup = new THREE.Group()
     campfire.add(flameGroup)
 
-    const flameMaterials = [
-      new THREE.MeshBasicMaterial({
-        color: 0xffe09a,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-      new THREE.MeshBasicMaterial({
-        color: 0xff7d2d,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-      new THREE.MeshBasicMaterial({
-        color: 0x5bc7ff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    ]
-    const flameMeshes = [
-      new THREE.Mesh(new THREE.ConeGeometry(0.23, 0.92, 18), flameMaterials[1]),
-      new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.72, 18), flameMaterials[0]),
-      new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.34, 16), flameMaterials[2]),
-    ]
-
-    flameMeshes.forEach((flame, index) => {
-      flame.position.y = [0.56, 0.5, 0.28][index]
-      flame.rotation.y = index * 1.7
+    const flameMeshes = Array.from({ length: 3 }, (_, index) => {
+      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.72 - index * 0.1, 1.08 - index * 0.15), makeFlameMaterial())
+      flame.position.set((index - 1) * 0.12, 0.68 - index * 0.07, index * 0.08)
       flameGroup.add(flame)
+      return flame
     })
 
     const fireLight = new THREE.PointLight(0xff8a2f, 0, 13.5, 1.7)
     fireLight.position.set(0, 1.15, 0)
     fireLight.castShadow = true
     fireLight.shadow.mapSize.set(1024, 1024)
+    fireLight.shadow.bias = -0.0005
+    fireLight.shadow.normalBias = 0.045
     campfire.add(fireLight)
 
     const lowGlow = new THREE.PointLight(0xff3b18, 0, 4.2, 2)
     lowGlow.position.set(0, 0.24, 0)
     campfire.add(lowGlow)
 
-    const sparkCount = 125
+    const sparkCount = 64
     const sparkGeometry = new THREE.BufferGeometry()
     const sparkPositions = new Float32Array(sparkCount * 3)
     const sparkVelocities = new Float32Array(sparkCount * 3)
@@ -1538,7 +1090,8 @@ export default function App() {
     const sparks = new THREE.Points(
       sparkGeometry,
       new THREE.PointsMaterial({
-        size: 0.055,
+        size: 0.035,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
         opacity: 0,
@@ -1555,76 +1108,40 @@ export default function App() {
     scene.add(skyGroup)
 
     DISCOVERIES.forEach((discovery, index) => {
-      const planetTexture = new THREE.CanvasTexture(
-        makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle),
-      )
+      const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle))
       planetTexture.colorSpace = THREE.SRGBColorSpace
-      const visibilityBoost = discovery.visibilityBoost ?? 1
-      const planetMaterial = new THREE.MeshBasicMaterial({
-        map: planetTexture,
-        color: discoveredIdsRef.current.has(discovery.id) ? 0xffffff : 0x242424,
-        transparent: false,
-        depthWrite: true,
-        toneMapped: false,
-        fog: false,
-      })
-      const planet = new THREE.Mesh(new THREE.SphereGeometry(discovery.radius, 48, 32), planetMaterial)
+      planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
+      const planet = new THREE.Mesh(
+        new THREE.SphereGeometry(discovery.radius, 64, 48),
+        new THREE.MeshStandardMaterial({
+          map: planetTexture,
+          bumpMap: planetTexture,
+          bumpScale: discovery.planetStyle?.bands ? 0.015 : 0.065,
+          roughness: 0.94,
+          emissive: 0xffffff,
+          emissiveMap: planetTexture,
+          emissiveIntensity: 0.025,
+          fog: false,
+        }),
+      )
       planet.position.set(...discovery.position)
       planet.userData.discoveryId = discovery.id
       planet.userData.discovered = discoveredIdsRef.current.has(discovery.id)
       planet.userData.discoveryGlow = 0
-      planet.userData.hoverScale = 1
-      planet.renderOrder = 3
       skyGroup.add(planet)
       planetMeshes.push(planet)
 
-      const fullBrightShell = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.018, 48, 32),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: discoveredIdsRef.current.has(discovery.id) ? Math.min(0.48, 0.18 * visibilityBoost) : 0,
-          depthTest: false,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-          fog: false,
-        }),
-      )
-      fullBrightShell.position.copy(planet.position)
-      fullBrightShell.renderOrder = 7
-      skyGroup.add(fullBrightShell)
-      planet.userData.fullBrightShell = fullBrightShell
-
       const atmosphere = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.09, 32, 16),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          side: THREE.BackSide,
-          toneMapped: false,
-          fog: false,
-        }),
+        new THREE.SphereGeometry(discovery.radius * 1.025, 48, 32),
+        makeAtmosphereMaterial(discovery.hex),
       )
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
       planet.userData.atmosphere = atmosphere
 
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(discovery.radius * 1.35, discovery.radius * 2.35, 96),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-          fog: false,
-        }),
+        new THREE.RingGeometry(discovery.radius * 1.28, discovery.radius * 1.295, 96),
+        new THREE.MeshBasicMaterial({ color: 0xf1c78b, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide }),
       )
       ring.position.copy(planet.position)
       skyGroup.add(ring)
@@ -1632,19 +1149,17 @@ export default function App() {
 
       let decorRing = null
       if (discovery.planetStyle?.rings) {
-        decorRing = new THREE.Mesh(
-          new THREE.RingGeometry(discovery.radius * 1.32, discovery.radius * 2.12, 128),
-          new THREE.MeshBasicMaterial({
-            color: discovery.hex,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending,
-            toneMapped: false,
-            fog: false,
-          }),
-        )
+        const inner = discovery.radius * 1.35
+        const outer = discovery.radius * 2.12
+        const geometry = new THREE.RingGeometry(inner, outer, 128, 1)
+        const position = geometry.attributes.position
+        for (let i = 0; i < position.count; i += 1) {
+          geometry.attributes.uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
+        }
+        decorRing = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+          map: makeRingTexture(index + 1), roughness: 1, transparent: true, opacity: 0.82,
+          depthWrite: false, side: THREE.DoubleSide, fog: false,
+        }))
         decorRing.position.copy(planet.position)
         decorRing.rotation.set(Math.PI / 2 + discovery.planetStyle.ringTilt, index * 0.48, index * 0.2)
         skyGroup.add(decorRing)
@@ -1652,7 +1167,7 @@ export default function App() {
       planetDecorRings.push(decorRing)
     })
 
-    const burstCount = 900
+    const burstCount = 256
     const burstPositions = new Float32Array(burstCount * 3)
     const burstVelocities = new Float32Array(burstCount * 3)
     const burstColors = new Float32Array(burstCount * 3)
@@ -1668,7 +1183,8 @@ export default function App() {
     const burstParticles = new THREE.Points(
       burstGeometry,
       new THREE.PointsMaterial({
-        size: 4.2,
+        size: 2,
+        map: particleTexture,
         sizeAttenuation: false,
         vertexColors: true,
         transparent: true,
@@ -1688,16 +1204,11 @@ export default function App() {
 
       const discovery = DISCOVERIES[index]
       const color = new THREE.Color(discovery.hex)
-      const burstSize = 230
+      const burstSize = 72
       const visibilityBoost = discovery.visibilityBoost ?? 1
       planet.userData.discovered = true
       planet.userData.discoveryGlow = Math.max(planet.userData.discoveryGlow, 2.4)
       planet.material.color.setRGB(1 * visibilityBoost, 1 * visibilityBoost, 1 * visibilityBoost)
-      planet.userData.fullBrightShell.material.opacity = Math.max(
-        planet.userData.fullBrightShell.material.opacity,
-        Math.min(0.5, 0.3 * visibilityBoost),
-      )
-
       for (let i = 0; i < burstSize; i += 1) {
         const slot = burstCursor
         burstCursor = (burstCursor + 1) % burstCount
@@ -1709,7 +1220,7 @@ export default function App() {
         const dy = y
         const dz = radial * Math.sin(theta)
         const surface = discovery.radius * (1.08 + burstRand() * 0.5)
-        const speed = 7 + burstRand() * 12
+        const speed = 2 + burstRand() * 4
 
         burstPositions[slot * 3] = planet.position.x + dx * surface
         burstPositions[slot * 3 + 1] = planet.position.y + dy * surface
@@ -1720,7 +1231,7 @@ export default function App() {
         burstAges[slot] = 0
         burstLifetimes[slot] = 0.48 + burstRand() * 0.58
         const sparkleColor = color.clone().lerp(new THREE.Color(0xffffff), 0.08 + burstRand() * 0.16)
-        const sparkleIntensity = 2.4 + burstRand() * 1.35
+        const sparkleIntensity = 0.6 + burstRand() * 0.5
         burstBaseColors[slot * 3] = sparkleColor.r * sparkleIntensity
         burstBaseColors[slot * 3 + 1] = sparkleColor.g * sparkleIntensity
         burstBaseColors[slot * 3 + 2] = sparkleColor.b * sparkleIntensity
@@ -1751,7 +1262,7 @@ export default function App() {
     }
 
     let yaw = 0
-    let pitch = -0.17
+    let pitch = -0.1
     let cameraPanTarget = null
     let localFocus = null
     let scopeHoldTarget = null
@@ -2055,22 +1566,19 @@ export default function App() {
       const dt = Math.min(0.04, (time - lastTime) * 0.001)
       lastTime = time
       const ignition = smoothstep(0.85, 2.65, elapsed)
-      const firePulse = 0.78 + Math.sin(elapsed * 17.1) * 0.12 + Math.sin(elapsed * 29.7) * 0.06
+      const firePulse = 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
-      ambient.intensity = 0.025 + ignition * 0.035
-      fireLight.intensity = ignition * (8.6 + firePulse * 4.2)
+      ambient.intensity = 0.24 + ignition * 0.08
+      fireLight.intensity = ignition * (7.8 + firePulse * 2.2)
       lowGlow.intensity = ignition * (1.8 + firePulse)
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
 
       flameMeshes.forEach((flame, index) => {
-        const wave = Math.sin(elapsed * (8 + index * 1.8) + index * 2.1)
-        const wobble = 1 + wave * 0.12
-        flame.scale.set(0.9 + wave * 0.08, ignition * wobble, 0.9 - wave * 0.05)
-        flame.rotation.y += dt * (0.8 + index * 0.25)
-        flame.position.x = Math.sin(elapsed * 7 + index) * 0.035
-        flame.position.z = Math.cos(elapsed * 6.4 + index) * 0.035
-        flame.material.opacity = ignition * [0.52, 0.65, 0.34][index]
+        flame.material.uniforms.time.value = elapsed + index * 11
+        flame.material.uniforms.opacity.value = ignition * (0.66 - index * 0.12)
+        flame.rotation.y = Math.atan2(camera.position.x, camera.position.z)
+        flame.scale.y = 0.94 + Math.sin(elapsed * 3.2 + index) * 0.06
       })
 
       if (recordDisc) {
@@ -2089,23 +1597,6 @@ export default function App() {
           THREE.MathUtils.clamp(1 - (recordDistance - 1) / 8, 0.1, 1)
         recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 0.055)
       }
-
-      musicNoteSprites.forEach((sprite, index) => {
-        musicNoteAges[index] += dt
-        if (musicNoteAges[index] >= musicNoteLifetimes[index]) {
-          respawnMusicNote(index)
-        }
-
-        const life = THREE.MathUtils.clamp(musicNoteAges[index] / musicNoteLifetimes[index], 0, 1)
-        const flutter = Math.sin(elapsed * 2.5 + index * 0.91) * 0.025
-        sprite.position.addScaledVector(musicNoteVelocities[index], dt)
-        sprite.position.x += flutter * 1.8 * dt
-        sprite.position.z += Math.cos(elapsed * 2.1 + index) * 0.045 * dt
-        sprite.position.y += Math.sin(elapsed * 1.6 + index) * 0.01 * dt
-        sprite.material.opacity = ignition * Math.sin(Math.PI * life) * Math.pow(1 - life, 0.48) * 0.62
-        sprite.scale.setScalar(0.16 + life * 0.28)
-        sprite.material.rotation = Math.sin(elapsed * 1.8 + index) * 0.22
-      })
 
       sparks.material.opacity = ignition * 0.88
       for (let i = 0; i < sparkCount; i += 1) {
@@ -2187,10 +1678,6 @@ export default function App() {
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
-      constellationGroup.position.copy(camera.position)
-      stars.rotation.y += dt * 0.006
-      anchorStars.rotation.y += dt * 0.004
-      constellationGroup.rotation.y += dt * 0.003
 
       while (discoveryEventsRef.current.length > 0) {
         const event = discoveryEventsRef.current.shift()
@@ -2261,94 +1748,23 @@ export default function App() {
       updateScopeAutoOpen(focusedId, dt)
 
       planetMeshes.forEach((planet, index) => {
-        const discovery = DISCOVERIES[index]
-        const focused = focusedId === discovery.id
-        const visibilityBoost = discovery.visibilityBoost ?? 1
-        planet.userData.discoveryGlow = Math.max(0, planet.userData.discoveryGlow - dt * 0.72)
+        const focused = focusedId === DISCOVERIES[index].id
+        planet.userData.discoveryGlow = Math.max(0, planet.userData.discoveryGlow - dt * 1.2)
         const burstGlow = planet.userData.discoveryGlow
-        const targetScale = focused ? 1.32 : 1 + Math.min(0.18, burstGlow * 0.05)
-        planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, targetScale, focused ? 0.18 : 0.08))
-        const materialBrightness = planet.userData.discovered
-          ? focused
-            ? 1.2 * visibilityBoost
-            : 0.88 * visibilityBoost
-          : scopeAmount
-            ? focused
-              ? 0.46 * visibilityBoost
-              : 0.06 * Math.min(visibilityBoost, 1.12)
-            : (0.018 + Math.min(0.04, burstGlow * 0.02)) * Math.min(visibilityBoost, 1.08)
-        planetTint.setRGB(materialBrightness, materialBrightness, materialBrightness)
-        planet.material.color.lerp(planetTint, focused ? 0.24 : 0.12)
-        const fullBrightShell = planet.userData.fullBrightShell
-        const shellOpacity = Math.min(
-          1,
-          (planet.userData.discovered
-            ? focused
-              ? 0.28
-              : 0.18
-            : scopeAmount && focused
-              ? 0.04
-              : Math.min(0.025, burstGlow * 0.02)) * visibilityBoost,
-        )
-        fullBrightShell.material.opacity = THREE.MathUtils.lerp(
-          fullBrightShell.material.opacity,
-          shellOpacity,
-          focused ? 0.18 : 0.12,
-        )
-        fullBrightShell.scale.setScalar(planet.scale.x * (planet.userData.discovered ? 1.035 : 1.015))
-        planet.rotation.y += dt * (0.05 + index * 0.01)
-        planet.userData.atmosphere.material.opacity = THREE.MathUtils.lerp(
-          planet.userData.atmosphere.material.opacity,
-          scopeAmount
-            ? focused
-              ? 0.22
-              : planet.userData.discovered
-                ? 0.2
-                : 0.025
-            : planet.userData.discovered
-              ? Math.min(0.32, 0.2 + burstGlow * 0.05)
-              : Math.min(0.035, burstGlow * 0.035),
-          0.1,
-        )
-
+        const blend = 1 - Math.exp(-dt * 5)
+        planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
+        const brightness = planet.userData.discovered ? 1 : 0.82
+        planetTint.setRGB(brightness, brightness, brightness)
+        planet.material.color.lerp(planetTint, blend)
+        planet.rotation.y += dt * (0.012 + index * 0.002)
+        const atmosphere = planet.userData.atmosphere
+        atmosphere.scale.copy(planet.scale)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, 0.32 + Math.min(0.15, burstGlow * 0.06), blend)
         const ring = planetRings[index]
         ring.lookAt(camera.position)
-        ring.material.opacity = THREE.MathUtils.lerp(
-          ring.material.opacity,
-          planet.userData.discovered
-            ? focused
-              ? 0.15
-              : 0.15
-            : scopeAmount
-              ? focused
-                ? 0.15
-                : 0.025
-              : Math.min(0.04, burstGlow * 0.025),
-          0.1,
-        )
-        ring.scale.setScalar(
-          (planet.userData.discovered ? 1.62 : focused ? 1.24 : 1) +
-            Math.sin(elapsed * 2.2 + index) * 0.055 +
-            Math.min(0.18, burstGlow * 0.04),
-        )
-
+        ring.material.opacity = THREE.MathUtils.lerp(ring.material.opacity, scopeAmount && focused ? 0.65 : 0, blend)
         const decorRing = planetDecorRings[index]
-        if (decorRing) {
-          decorRing.material.opacity = THREE.MathUtils.lerp(
-            decorRing.material.opacity,
-            planet.userData.discovered
-              ? focused
-                ? 0.6
-                : 0.4
-              : scopeAmount
-                ? focused
-                  ? 0.18
-                  : 0.03
-                : Math.min(0.03, burstGlow * 0.02),
-            0.1,
-          )
-          decorRing.rotation.z += dt * 0.035
-        }
+        if (decorRing) decorRing.scale.copy(planet.scale)
       })
 
       if (elapsed > 2.9 && !hasSetIgnited) {
