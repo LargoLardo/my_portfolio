@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { damp, nextGeneration } from './life.js'
+import ExperienceList from './ExperienceEntry.jsx'
 
 const projects = [
   {
@@ -57,6 +58,7 @@ const experience = [
     detail: 'Incoming F26.',
     logo: '/shopify-cropped.png',
     company: 'Shopify',
+    color: '#95bf47',
   },
   {
     title: 'Application Programmer',
@@ -64,6 +66,7 @@ const experience = [
     detail: 'Automated QA for 1,000+ Cognos BI reports per hour and built data workflows across Redshift, AWS Lambda, and Python.',
     logo: '/govicon-cropped.png',
     company: 'Ontario Government',
+    color: '#8fc43e',
   }
 ]
 
@@ -81,6 +84,7 @@ function LifeCanvas({ running, boardRef }) {
     const context = canvas.getContext('2d')
     let frame
     let lastStep = 0
+    let lastDraw = 0
 
     const resize = () => {
       const cellSize = innerWidth < 700 ? 17 : 22
@@ -88,7 +92,7 @@ function LifeCanvas({ running, boardRef }) {
       const rows = Math.ceil(innerHeight / cellSize)
       const cells = new Uint8Array(columns * rows)
       for (let i = 0; i < cells.length; i += 1) cells[i] = Math.random() < 0.14 ? 1 : 0
-      boardRef.current = { cells, columns, rows, cellSize }
+      boardRef.current = { cells, levels: Float32Array.from(cells), columns, rows, cellSize }
       canvas.width = innerWidth * devicePixelRatio
       canvas.height = innerHeight * devicePixelRatio
       canvas.style.width = `${innerWidth}px`
@@ -106,17 +110,23 @@ function LifeCanvas({ running, boardRef }) {
     const draw = (time = 0) => {
       const state = boardRef.current
       if (!state) return
+      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
+      lastDraw = time
       if (runningRef.current && time - lastStep > 130) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
       context.clearRect(0, 0, innerWidth, innerHeight)
       for (let i = 0; i < state.cells.length; i += 1) {
-        if (!state.cells[i]) continue
+        const level = damp(state.levels[i], state.cells[i], fade)
+        state.levels[i] = level
+        if (level < 0.01) continue
         const x = (i % state.columns) * state.cellSize
         const y = Math.floor(i / state.columns) * state.cellSize
+        context.globalAlpha = level
         context.fillRect(x + 1, y + 1, state.cellSize - 2, state.cellSize - 2)
       }
+      context.globalAlpha = 1
       frame = requestAnimationFrame(draw)
     }
 
@@ -240,20 +250,7 @@ export default function MinimalPortfolio() {
 
         <div className="section-row" data-scroll-layer>
           <h2>EXPERIENCE</h2>
-          <div className="entries">
-            {experience.map((item) => (
-              <article className="entry job-entry" key={item.title}>
-                <img className="company-logo" src={item.logo} alt={`${item.company} logo`} />
-                <div>
-                  <div className="entry-heading">
-                    <div className="job-title"><h3>{item.title}</h3><span>{item.company}</span></div>
-                    <time>{item.date}</time>
-                  </div>
-                  <p>{item.detail}</p>
-                </div>
-              </article>
-            ))}
-          </div>
+          <ExperienceList items={experience} />
         </div>
 
         <div className="section-row" data-scroll-layer>
