@@ -1,35 +1,70 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
-function TerminalDescription({ text }) {
-  const [length, setLength] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? text.length : 0)
+function logoColor(image) {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 32
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+  context.drawImage(image, 0, 0, 32, 32)
+  const pixels = context.getImageData(0, 0, 32, 32).data
+  let red = 0
+  let green = 0
+  let blue = 0
+  let weight = 0
+  for (let i = 0; i < pixels.length; i += 4) {
+    const [r, g, b, alpha] = pixels.slice(i, i + 4)
+    const saturation = Math.max(r, g, b) - Math.min(r, g, b)
+    if (alpha < 128 || saturation < 32) continue
+    const amount = alpha * saturation
+    red += r * amount
+    green += g * amount
+    blue += b * amount
+    weight += amount
+  }
+  return weight ? `rgb(${Math.round(red / weight)} ${Math.round(green / weight)} ${Math.round(blue / weight)})` : null
+}
+
+function TerminalDescription({ points }) {
+  const totalLength = points.reduce((sum, point) => sum + point.length, 0)
+  const [length, setLength] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? totalLength : 0)
 
   useEffect(() => {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const start = performance.now()
     let frame
     const type = (now) => {
-      const next = Math.min(text.length, Math.floor((now - start) / 12))
+      const next = Math.min(totalLength, Math.floor((now - start) / 4))
       setLength(next)
-      if (next < text.length) frame = requestAnimationFrame(type)
+      if (next < totalLength) frame = requestAnimationFrame(type)
     }
     frame = requestAnimationFrame(type)
     return () => cancelAnimationFrame(frame)
-  }, [text])
+  }, [totalLength])
 
   return (
-    <p className="experience-description">
-      <span className="experience-description-accessible">{text}</span>
-      <span aria-hidden="true">{text.slice(0, length)}{length < text.length && <span className="terminal-cursor">█</span>}</span>
-    </p>
+    <ul className="experience-description">
+      {points.map((point, index) => {
+        const start = points.slice(0, index).reduce((sum, previous) => sum + previous.length, 0)
+        return (
+          <li key={point} className={length < start ? 'is-pending' : undefined}>
+            <span className="experience-description-line">
+              <span className="experience-description-accessible">{point}</span>
+              <span aria-hidden="true">{point.slice(0, Math.max(0, length - start))}{length >= start && length < start + point.length && <span className="terminal-cursor">█</span>}</span>
+            </span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
 function ExperienceEntry({ item, onBurst }) {
   const [expanded, setExpanded] = useState(false)
   const [showDescription, setShowDescription] = useState(false)
+  const [color, setColor] = useState('#a7b3a8')
   const descriptionId = useId()
   return (
-    <article className="entry job-entry" onPointerEnter={(event) => onBurst(item, event)} style={{ '--experience-color': item.color }}>
+    <article className="entry job-entry" onPointerEnter={(event) => onBurst(color, event)} style={{ '--experience-color': color }}>
       <button
         type="button"
         className="experience-toggle"
@@ -45,7 +80,7 @@ function ExperienceEntry({ item, onBurst }) {
           }
         }}
       >
-        <img className="company-logo" src={item.logo} alt="" />
+        <img className="company-logo" src={item.logo} alt="" onLoad={(event) => setColor(logoColor(event.currentTarget) || color)} />
         <span className="entry-heading">
           <span className="job-title"><span className="job-role">{item.title}</span><span>{item.company}</span></span>
           <time>{item.date}</time>
@@ -59,7 +94,7 @@ function ExperienceEntry({ item, onBurst }) {
           if (event.target === event.currentTarget && event.propertyName === 'grid-template-rows' && !expanded) setShowDescription(false)
         }}
       >
-        <div>{showDescription && <TerminalDescription text={item.detail} />}</div>
+        <div>{showDescription && <TerminalDescription points={item.detail} />}</div>
       </div>
     </article>
   )
@@ -140,7 +175,7 @@ export default function ExperienceList({ items }) {
       frame = requestAnimationFrame(draw)
     }
 
-    burstRef.current = (item, event) => {
+    burstRef.current = (color, event) => {
       if (event.pointerType === 'touch' || reducedMotion.matches) return
       const rect = canvas.getBoundingClientRect()
       const logo = event.currentTarget.querySelector('.company-logo').getBoundingClientRect()
@@ -148,7 +183,7 @@ export default function ExperienceList({ items }) {
       bursts.push({
         x: (logo.left + logo.width / 2 - rect.left) * scale,
         y: (logo.top + logo.height / 2 - rect.top) * scale,
-        color: item.color,
+        color,
         seed: Math.random() * 10000,
         started: performance.now(),
       })
@@ -168,7 +203,7 @@ export default function ExperienceList({ items }) {
   return (
     <div className="entries experience-list">
       <canvas className="experience-pixels" ref={canvasRef} aria-hidden="true" />
-      {items.map((item) => <ExperienceEntry key={item.company} item={item} onBurst={(item, event) => burstRef.current?.(item, event)} />)}
+      {items.map((item) => <ExperienceEntry key={item.company} item={item} onBurst={(color, event) => burstRef.current?.(color, event)} />)}
     </div>
   )
 }

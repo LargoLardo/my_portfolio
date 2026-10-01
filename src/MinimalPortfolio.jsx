@@ -55,18 +55,23 @@ const experience = [
   {
     title: 'Software Engineer',
     date: 'September 2026 — December 2026',
-    detail: 'Incoming F26.',
+    detail: [
+      'Built Ruby on Rails and SQL tools for merchant verification, data repair, and onboarding safeguards.',
+      'Created PayPal remediation workflows on Shopify’s Payments and Onboarding team.',
+    ],
     logo: '/shopify-cropped.png',
     company: 'Shopify',
-    color: '#95bf47',
   },
   {
     title: 'Application Programmer',
     date: 'January 2026 — May 2026',
-    detail: 'Automated QA for 1,000+ Cognos BI reports per hour and built data workflows across Redshift, AWS Lambda, and Python.',
+    detail: [
+      'Co-developed a QA app with a team of 4 using the IBM Cognos API and Playwright; it validates 3,000+ reports/hour and protects database integrity.',
+      'Built a Redshift star schema with SQL in DBeaver, helping organize 50,000+ reports.',
+      'Supported AWS Lambda ETL of Cognos audit logs into Redshift for BI monitoring.',
+    ],
     logo: '/govicon-cropped.png',
     company: 'Ontario Government',
-    color: '#8fc43e',
   }
 ]
 
@@ -92,7 +97,14 @@ function LifeCanvas({ running, boardRef }) {
       const rows = Math.ceil(innerHeight / cellSize)
       const cells = new Uint8Array(columns * rows)
       for (let i = 0; i < cells.length; i += 1) cells[i] = Math.random() < 0.14 ? 1 : 0
-      boardRef.current = { cells, levels: Float32Array.from(cells), columns, rows, cellSize }
+      const opacity = Float32Array.from(cells, (_, i) => {
+        const x = ((i % columns + 0.5) * cellSize - innerWidth / 2) / (innerWidth / 2)
+        const y = ((Math.floor(i / columns) + 0.5) * cellSize - innerHeight / 2) / (innerHeight / 2)
+        const distance = Math.hypot(x, y)
+        const amount = Math.min(1, Math.max(0, (distance - 0.35) / 0.65))
+        return 0.55 + 0.45 * amount * amount * (3 - 2 * amount)
+      })
+      boardRef.current = { cells, levels: Float32Array.from(cells), opacity, columns, rows, cellSize }
       canvas.width = innerWidth * devicePixelRatio
       canvas.height = innerHeight * devicePixelRatio
       canvas.style.width = `${innerWidth}px`
@@ -102,8 +114,8 @@ function LifeCanvas({ running, boardRef }) {
         innerWidth / 2, innerHeight / 2, 0,
         innerWidth / 2, innerHeight / 2, Math.hypot(innerWidth, innerHeight) / 2,
       )
-      gradient.addColorStop(0.34, '#3f5f50')
-      gradient.addColorStop(1, '#7bd88f')
+      gradient.addColorStop(0.34, '#315f3d')
+      gradient.addColorStop(1, '#53d66f')
       context.fillStyle = gradient
     }
 
@@ -123,7 +135,7 @@ function LifeCanvas({ running, boardRef }) {
         if (level < 0.01) continue
         const x = (i % state.columns) * state.cellSize
         const y = Math.floor(i / state.columns) * state.cellSize
-        context.globalAlpha = level
+        context.globalAlpha = level * state.opacity[i]
         context.fillRect(x + 1, y + 1, state.cellSize - 2, state.cellSize - 2)
       }
       context.globalAlpha = 1
@@ -223,7 +235,11 @@ export default function MinimalPortfolio() {
       <section className="portfolio-card" ref={cardRef}>
         <header data-scroll-layer>
           <div className="title-row">
-            <h1>Logan Zhao</h1>
+            <h1 aria-label="Logan Zhao">
+              {'Logan Zhao'.split('').map((letter, index) => letter === ' ' ? ' ' : (
+                <span className="title-letter" aria-hidden="true" key={index}>{letter}</span>
+              ))}
+            </h1>
             <a className="saturn-link" href="/current" aria-label="Enter Logan's immersive space portfolio">
               <span className="saturn-ring" />
               <span className="saturn-planet" />
