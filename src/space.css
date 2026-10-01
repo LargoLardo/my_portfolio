@@ -4,6 +4,12 @@
   --suit-amber: #d6ae78;
   --suit-line: rgba(207, 211, 193, 0.22);
   --instrument-font: 'Departure Mono', ui-monospace, monospace;
+  --boot-start: 300ms;
+  --boot-type: 1140ms;
+  --boot-hold: 2000ms;
+  --boot-erase: 570ms;
+  --boot-delete-at: calc(var(--boot-start) + var(--boot-type) + var(--boot-hold));
+  --boot-reveal-at: calc(var(--boot-delete-at) + var(--boot-erase));
   position: relative;
   width: 100%;
   height: 100%;
@@ -22,18 +28,29 @@
 .space-app button { transition: background 160ms ease, border-color 160ms ease, color 160ms ease; }
 
 .darkness, .vignette { position: absolute; inset: 0; pointer-events: none; }
-.darkness { z-index: 30; background: #030609; animation: darkness-ignition 1.8s ease forwards; }
+.darkness { z-index: 30; background: #000; opacity: 1; pointer-events: auto; }
+.is-ready .darkness { animation: darkness-ignition 1.8s ease-in-out var(--boot-reveal-at) forwards; }
 .boot-title {
+  --boot-text-width: calc(var(--boot-characters) * (1ch + 0.2em));
   position: absolute;
   top: 50%; left: 50%; z-index: 31;
+  display: flex; align-items: center;
   color: var(--suit-amber);
   font: 11px var(--instrument-font);
   letter-spacing: 0.2em;
   white-space: nowrap;
+  width: calc(var(--boot-text-width) + 1ch);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  animation: boot-fade 600ms ease 650ms forwards;
 }
+.boot-text { display: block; width: 0; overflow: hidden; }
+.boot-cursor { flex: 0 0 0.8ch; height: 1.05em; background: currentColor; }
+.is-ready .boot-text {
+  animation: boot-type var(--boot-type) steps(var(--boot-characters), end) var(--boot-start) forwards,
+    boot-erase var(--boot-erase) steps(var(--boot-characters), end) var(--boot-delete-at) forwards;
+}
+.is-ready .boot-cursor { animation: boot-blink 500ms step-end calc(var(--boot-start) + var(--boot-type)) 4; }
+.is-ready .boot-title { animation: boot-fade 180ms ease var(--boot-reveal-at) forwards; }
 .vignette {
   z-index: 2;
   background: radial-gradient(ellipse at 50% 44%, transparent 40%, rgba(2, 5, 7, 0.42) 100%),
@@ -209,6 +226,9 @@
 .sign-help-panel p:last-child { margin-bottom: 0; }
 
 @keyframes darkness-ignition { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+@keyframes boot-type { from { width: 0; } to { width: var(--boot-text-width); } }
+@keyframes boot-erase { from { width: var(--boot-text-width); } to { width: 0; } }
+@keyframes boot-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes boot-fade { to { opacity: 0; visibility: hidden; } }
 @keyframes panel-enter { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
 
@@ -239,4 +259,7 @@
 @media (prefers-reduced-motion: reduce) {
   .space-app *, .space-app *::before, .space-app *::after { transition: none !important; animation-duration: 1ms !important; animation-delay: 0ms !important; }
   .discovery-confirmation { animation: none; opacity: 1; }
+  .space-app .boot-text { width: var(--boot-text-width); animation: none !important; }
+  .space-app .boot-cursor { animation: none !important; }
+  .space-app.is-ready :is(.darkness, .boot-title) { animation-delay: 2s !important; animation-duration: 200ms !important; }
 }

@@ -49,6 +49,7 @@ try {
   })
   await send('Page.reload', { ignoreCache: true })
   await loaded
+  await waitFor("document.querySelector('.space-app')?.classList.contains('is-lit')")
   await waitFor("document.querySelectorAll('.destination-portrait').length === 8 && [...document.querySelectorAll('.destination-portrait')].every(e => e.naturalWidth === 160)")
   assert.equal(await evaluate("new Set([...document.querySelectorAll('.destination-portrait')].map(e => e.src)).size"), 8)
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 0)

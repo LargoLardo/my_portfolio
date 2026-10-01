@@ -19,6 +19,7 @@ const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
 const SCOPE_AUTO_OPEN_DURATION = 1.7
 const MUSIC_FADE_SECONDS = 5
+const UPLINK_MESSAGE = 'ESTABLISHING UPLINK'
 
 const DEFAULT_RECORD_TRACKS = [
   {
@@ -590,6 +591,7 @@ export default function App() {
   const [focusedTarget, setFocusedTarget] = useState(null)
   const [activeDiscovery, setActiveDiscovery] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sceneReady, setSceneReady] = useState(false)
   const [ignited, setIgnited] = useState(false)
   const [controlsVisible, setControlsVisible] = useState(true)
   const [readSignAvailable, setReadSignAvailable] = useState(false)
@@ -1497,7 +1499,7 @@ export default function App() {
     let scopeAutoOpenedTarget = null
     let scopeLostTime = 0
     let displayedProgress = 0
-    let hasSetIgnited = false
+    let hasStartedIntro = false
     const startTime = performance.now()
     let lastTime = startTime
     let raf = 0
@@ -1712,6 +1714,7 @@ export default function App() {
     const onContextMenu = (event) => event.preventDefault()
 
     const onKeyDown = (event) => {
+      if (mount.inert) return
       if (event.repeat) return
       if (event.code === 'Escape') {
         pendingRevealRef.current = null
@@ -2005,13 +2008,13 @@ export default function App() {
         }
       })
 
-      if (elapsed > 1.2 && !hasSetIgnited) {
-        hasSetIgnited = true
-        setIgnited(true)
+      renderer.render(scene, camera)
+
+      if (!hasStartedIntro) {
+        hasStartedIntro = true
+        setSceneReady(true)
         setPlanetPortraits(portraits)
       }
-
-      renderer.render(scene, camera)
     }
 
     clampPlayer()
@@ -2053,18 +2056,20 @@ export default function App() {
     <main
       className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${completedDiscovery ? 'scan-complete' : ''} ${
         ignited ? 'is-lit' : ''
-      } ${sidebarOpen ? 'has-sidebar' : ''}`}
+      } ${sceneReady ? 'is-ready' : ''} ${sidebarOpen ? 'has-sidebar' : ''}`}
       style={{
         '--scope-lock-scale': 1 - scopeProximity * 0.72,
         '--scope-lock-opacity': 0.24 + scopeProximity * 0.76,
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
-      <div ref={mountRef} className="scene-mount" tabIndex={0} role="region" aria-label="Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard." />
+      <div ref={mountRef} className="scene-mount" inert={!ignited} tabIndex={0} role="region" aria-label="Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard." />
 
-      <div className="darkness" aria-hidden="true" />
-      <div className="boot-title" aria-hidden="true">
-        ESTABLISHING UPLINK
+      <div className="darkness" aria-hidden="true" onAnimationEnd={(event) => {
+        if (event.animationName === 'darkness-ignition') setIgnited(true)
+      }} />
+      <div className="boot-title" aria-hidden="true" style={{ '--boot-characters': UPLINK_MESSAGE.length }}>
+        <span className="boot-text">{UPLINK_MESSAGE}</span><span className="boot-cursor" />
       </div>
       <div className="vignette" aria-hidden="true" />
 
@@ -2072,7 +2077,7 @@ export default function App() {
         <span className="reticle-prompt">{cursorPrompt}</span>
       </div>
 
-      <nav className="hud-actions" aria-label="Exploration tools">
+      <nav className="hud-actions" inert={!ignited} aria-label="Exploration tools">
         <button
           ref={directoryButtonRef}
           className="sections-button"
