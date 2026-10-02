@@ -2,7 +2,17 @@
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { rollPlanetCompanions, rollSystemCompanions, rollMoonSurface, companionOpacity, createPlanetCompanions } from '../src/spaceCompanions.js'
-import { makePlanetGeometry, makeRingTexture } from '../src/spaceMaterials.js'
+import { makePlanetGeometry, makeRingTexture, skyElevationBrightness } from '../src/spaceMaterials.js'
+
+assert.equal(skyElevationBrightness(0), 0.6, 'The horizon should be 60% as bright')
+assert.equal(skyElevationBrightness(-1), 0.6)
+assert.equal(skyElevationBrightness(1), 1, 'The zenith should retain full brightness')
+let previousSkyBrightness = 0.6
+for (let elevation = 0; elevation <= 1; elevation += 0.01) {
+  const brightness = skyElevationBrightness(elevation)
+  assert.ok(brightness >= previousSkyBrightness && brightness <= 1)
+  previousSkyBrightness = brightness
+}
 
 for (const bands of [false, true]) {
   const geometry = makePlanetGeometry(3, 12, { bands })
@@ -88,11 +98,22 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
   const version = material.map.version
   system.update(1, 1, false)
   const hue = material.userData.hueShift.value
+  const sparkleColors = moon.sparkles?.geometry.attributes.color.array.slice()
   assert.equal(hue > 0, surface === 'rainbow', 'Only rainbow moons change hue')
   system.update(10, 1, true)
   assert.equal(material.userData.hueShift.value, hue, 'Reduced motion freezes rainbow colors')
+  if (moon.sparkles) assert.deepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Reduced motion freezes twinkling')
   system.update(1, 1, false)
-  if (surface === 'rainbow') assert.ok(material.userData.hueShift.value > hue && material.userData.hueShift.value < 0.15, 'Rainbow colors drift slowly')
+  if (surface === 'rainbow') {
+    assert.ok(Math.abs(material.userData.hueShift.value - Math.PI / 6) < 1e-9, 'Rainbow moons complete a color cycle in 24 seconds')
+    assert.ok(material.emissiveIntensity > 1 && material.color.r > 1.4, 'Rainbow moons should be brighter')
+    assert.notDeepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Surface glints should shimmer')
+    const alpha = moon.sparkles.geometry.attributes.color
+    assert.ok(Array.from({ length: alpha.count }, (_, i) => alpha.getW(i)).every(value => value >= 0.039 && value <= 1))
+    system.update(0, 0.5, false)
+    assert.equal(moon.sparkles.material.opacity, moon.sparkles.material.userData.baseOpacity * 0.5, 'Sparkles fade with the moon')
+    moon.sparkles.geometry.dispose(); moon.sparkles.material.dispose()
+  } else assert.equal(moon.sparkles, null)
   assert.equal(material.map.version, version, 'Color shifts must not regenerate or upload textures')
   moon.mesh.geometry.dispose(); material.map.dispose(); material.dispose()
 }

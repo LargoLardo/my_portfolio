@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { createPlanetCompanions, rollSystemCompanions, companionOpacity } from './spaceCompanions.js'
@@ -833,7 +833,7 @@ export default function App() {
     const starCount = 4200
     const starRadiusConst = 1200
     const starPositions = new Float32Array(starCount * 3)
-    const starColors = new Float32Array(starCount * 3)
+    const starColors = new Float32Array(starCount * 4)
     const starRand = seededRandom(612)
 
     for (let i = 0; i < starCount; i += 1) {
@@ -849,13 +849,14 @@ export default function App() {
       starPositions[i * 3] = x
       starPositions[i * 3 + 1] = y
       starPositions[i * 3 + 2] = z
-      starColors[i * 3] = cold ? brightness * 0.9 : brightness * 1.25
-      starColors[i * 3 + 1] = brightness
-      starColors[i * 3 + 2] = cold ? brightness * 1.35 : brightness * 0.86
+      starColors[i * 4] = cold ? brightness * 0.9 : brightness * 1.25
+      starColors[i * 4 + 1] = brightness
+      starColors[i * 4 + 2] = cold ? brightness * 1.35 : brightness * 0.86
+      starColors[i * 4 + 3] = skyElevationBrightness(y / radius)
     }
 
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
-    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3))
+    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 4))
     const stars = new THREE.Points(
       starGeometry,
       new THREE.PointsMaterial({
@@ -876,7 +877,7 @@ export default function App() {
     const anchorStarRadiusConst = 1500
     const anchorStarGeometry = new THREE.BufferGeometry()
     const anchorStarPositions = new Float32Array(anchorStarCount * 3)
-    const anchorStarColors = new Float32Array(anchorStarCount * 3)
+    const anchorStarColors = new Float32Array(anchorStarCount * 4)
     const anchorRand = seededRandom(1717)
 
     for (let i = 0; i < anchorStarCount; i += 1) {
@@ -889,13 +890,14 @@ export default function App() {
       anchorStarPositions[i * 3] = Math.sin(phi) * Math.cos(theta) * radius
       anchorStarPositions[i * 3 + 1] = y
       anchorStarPositions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * radius
-      anchorStarColors[i * 3] = twinkle
-      anchorStarColors[i * 3 + 1] = twinkle * (0.9 + anchorRand() * 0.25)
-      anchorStarColors[i * 3 + 2] = twinkle * (0.95 + anchorRand() * 0.35)
+      anchorStarColors[i * 4] = twinkle
+      anchorStarColors[i * 4 + 1] = twinkle * (0.9 + anchorRand() * 0.25)
+      anchorStarColors[i * 4 + 2] = twinkle * (0.95 + anchorRand() * 0.35)
+      anchorStarColors[i * 4 + 3] = skyElevationBrightness(y / radius)
     }
 
     anchorStarGeometry.setAttribute('position', new THREE.BufferAttribute(anchorStarPositions, 3))
-    anchorStarGeometry.setAttribute('color', new THREE.BufferAttribute(anchorStarColors, 3))
+    anchorStarGeometry.setAttribute('color', new THREE.BufferAttribute(anchorStarColors, 4))
     const anchorStars = new THREE.Points(
       anchorStarGeometry,
       new THREE.PointsMaterial({
@@ -1292,13 +1294,14 @@ export default function App() {
     const portraits = {}
     const companionConfigs = rollSystemCompanions(DISCOVERIES.length)
     DISCOVERIES.forEach((discovery, index) => {
+      const skyBrightness = { value: 1 }
       const geometry = makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle)
       const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, { ...discovery.planetStyle, craterData: geometry.userData.craters }))
       planetTexture.colorSpace = THREE.SRGBColorSpace
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
         geometry,
-        makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle),
+        withSkyBrightness(makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle), skyBrightness),
       )
       planet.position.set(...discovery.position).multiplyScalar(1.65)
       planet.userData.discoveryId = discovery.id
@@ -1310,7 +1313,7 @@ export default function App() {
 
       const atmosphere = new THREE.Mesh(
         new THREE.SphereGeometry(discovery.radius * 1.025, 48, 32),
-        makeAtmosphereMaterial(discovery.hex),
+        withSkyBrightness(makeAtmosphereMaterial(discovery.hex), skyBrightness),
       )
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
@@ -1318,7 +1321,7 @@ export default function App() {
       if (!discovery.planetStyle.bands && !discovery.planetStyle.cracked) {
         const clouds = new THREE.Mesh(
           new THREE.SphereGeometry(discovery.radius * 1.008, 96, 64),
-          makePlanetCloudMaterial(index + 21, discovery.palette.at(-1)),
+          withSkyBrightness(makePlanetCloudMaterial(index + 21, discovery.palette.at(-1)), skyBrightness),
         )
         clouds.position.copy(planet.position)
         skyGroup.add(clouds)
@@ -1334,10 +1337,10 @@ export default function App() {
         for (let i = 0; i < position.count; i += 1) {
           geometry.attributes.uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
         }
-        decorRing = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+        decorRing = new THREE.Mesh(geometry, withSkyBrightness(new THREE.MeshStandardMaterial({
           map: makeRingTexture(index + 1, discovery.palette[2]), roughness: 1, transparent: true, opacity: 1,
           depthWrite: false, side: THREE.DoubleSide, fog: false,
-        }))
+        }), skyBrightness))
         decorRing.material.emissive.set(0x777777)
         decorRing.material.emissiveMap = decorRing.material.map
         decorRing.material.emissiveIntensity = 0
@@ -2021,6 +2024,8 @@ export default function App() {
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
         const inspecting = orbitPlanet === planet
+        const skyBrightness = inspecting ? 1 : skyElevationBrightness((planet.position.y - camera.position.y) / camera.position.distanceTo(planet.position))
+        planet.material.userData.skyBrightness.value = THREE.MathUtils.damp(planet.material.userData.skyBrightness.value, skyBrightness, 5, dt)
         const companions = planet.userData.companions
         const arrivalDistance = companions.outerRadius / Math.sin(angularRadius)
         const companionFade = orbit.active

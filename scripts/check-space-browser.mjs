@@ -76,8 +76,13 @@ try {
   assert.equal(await evaluate("new Set([...document.querySelectorAll('.destination-portrait')].map(e => e.src)).size"), 8)
   const companions = await evaluate(`(() => {
     const { scenes, renderer } = window.__spaceGraphics;
-    const planets = scenes.findLast(scene => scene.children.some(group => group.children.some(p => p.userData.companions)))
-      .children.flatMap(group => group.children).filter(p => p.userData.companions);
+    const scene = scenes.findLast(scene => scene.children.some(group => group.children.some(p => p.userData.companions)));
+    const planets = scene.children.flatMap(group => group.children).filter(p => p.userData.companions);
+    const starFades = scene.children.filter(o => o.isPoints && o.geometry.attributes.color?.itemSize === 4).map(o => {
+      const colors = o.geometry.attributes.color;
+      const values = Array.from({ length: colors.count }, (_, i) => colors.getW(i));
+      return [Math.min(...values), Math.max(...values)];
+    });
     let prepared = true;
     planets.forEach(planet => planet.userData.companions.group.traverse(object => {
       if (object.material && !renderer.properties.get(object.material).currentProgram) prepared = false;
@@ -85,13 +90,17 @@ try {
     }));
     return {
       count: planets.length, ufos: planets.filter(p => p.userData.companions.config.ufo).length,
-      hidden: planets.every(p => !p.userData.companions.group.visible), prepared,
+      hidden: planets.every(p => !p.userData.companions.group.visible), prepared, starFades,
+      planetBrightness: planets.map(p => p.material.userData.skyBrightness.value),
     };
   })()`)
   assert.equal(companions.count, 8)
   assert.ok(companions.ufos >= 1 && companions.ufos <= 2, 'The scene must contain one or two UFOs')
   assert.ok(companions.hidden, 'Companions must stay hidden at camp')
   assert.ok(companions.prepared, 'Every companion shader and texture must be ready before the first flight')
+  assert.equal(companions.starFades.length, 2, 'Both star fields should have an elevation gradient')
+  assert.ok(companions.starFades.every(([min, max]) => Math.abs(min - 0.6) < 1e-6 && max > 0.999))
+  assert.ok(companions.planetBrightness.every(value => value >= 0.6 && value < 1), 'Ground-view planets share the sky brightness gradient')
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 0)
   assert.equal(await evaluate("document.querySelector('.mute-button').closest('[inert]')"), null)
   assert.equal(await evaluate("document.querySelector('.mute-button').textContent.trim()"), '')

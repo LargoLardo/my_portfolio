@@ -1,5 +1,23 @@
 import * as THREE from 'three'
 
+export function skyElevationBrightness(heightFraction) {
+  return 0.6 + 0.4 * THREE.MathUtils.smoothstep(heightFraction, 0, 1)
+}
+
+// Fade the finished color so 60% brightness stays 60% after tone mapping.
+export function withSkyBrightness(material, brightness) {
+  const compile = material.onBeforeCompile, key = material.customProgramCacheKey()
+  material.userData.skyBrightness = brightness
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer)
+    shader.uniforms.skyBrightness = brightness
+    shader.fragmentShader = `uniform float skyBrightness;\n${shader.fragmentShader}`
+      .replace('#include <colorspace_fragment>', '#include <colorspace_fragment>\ngl_FragColor.rgb *= skyBrightness;')
+  }
+  material.customProgramCacheKey = () => `${key}|sky-brightness`
+  return material
+}
+
 function hash(x, y, z, seed) {
   let value = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ seed
   value = Math.imul(value ^ (value >>> 13), 1274126177)

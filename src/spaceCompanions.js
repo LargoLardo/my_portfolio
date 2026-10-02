@@ -48,6 +48,7 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
   group.userData.config = config
   const moons = []
   const materials = []
+  const sparkleColor = new THREE.Color()
   const paletteOffset = Math.floor(random() * MOON_PALETTES.length)
   const sizeOffset = Math.floor(random() * 3), surfaceOffset = Math.floor(random() * 3)
   const orbitalRate = 0.1 + random() * 0.07
@@ -75,15 +76,33 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     const texture = new THREE.CanvasTexture(makePlanetTexture(palette, seed, { ...style, craterData: geometry.userData.craters }, 512, 256))
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
-    material.color.setScalar(1.4)
-    material.emissiveIntensity = 0.72
+    material.color.setScalar(surface === 'rainbow' ? 1.65 : 1.4)
+    material.emissiveIntensity = surface === 'rainbow' ? 1.2 : 0.72
     material.bumpScale = moonRadius * (surface === 'rainbow' ? 0.007 : surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
     material.userData.detail.value = surface === 'rainbow' ? 0.2 : surface === 'lunar' ? 0.6 : 1
     const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `moon-${i + 1}`
     group.add(mesh)
+    let sparkles = null
+    if (surface === 'rainbow') {
+      const count = 32, positions = new Float32Array(count * 3)
+      for (let j = 0; j < count; j++) {
+        const y = 1 - 2 * (j + 0.5) / count, angle = j * 2.399963 + seed
+        const r = Math.sqrt(1 - y * y) * moonRadius * 1.02
+        positions.set([Math.cos(angle) * r, y * moonRadius * 1.02, Math.sin(angle) * r], j * 3)
+      }
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 4), 4))
+      sparkles = new THREE.Points(geometry, register(new THREE.PointsMaterial({
+        map: particleTexture, size: moonRadius * 0.2, opacity: 0.85, vertexColors: true,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+      })))
+      sparkles.name = 'rainbow-sparkles'
+      mesh.add(sparkles)
+    }
     moons.push({
-      mesh, radius: moonRadius, surface, orbit,
+      mesh, radius: moonRadius, surface, orbit, sparkles,
       phase: random() * TAU,
       speed: orbitalRate * (0.85 + random() * 0.3) * (moons.length ? (moons[0].orbit / orbit) ** 1.5 : 1),
       spin: 0.015 + random() * 0.06,
@@ -186,7 +205,16 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
       moons.forEach(moon => {
         moonPosition(moon, age, moon.mesh.position)
         if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
-        if (moon.surface === 'rainbow') moon.mesh.material.userData.hueShift.value = age * TAU / 90
+        if (moon.surface === 'rainbow') {
+          moon.mesh.material.userData.hueShift.value = age * TAU / 24
+          const colors = moon.sparkles.geometry.attributes.color
+          for (let i = 0; i < colors.count; i++) {
+            sparkleColor.setHSL((age / 24 + i * 0.073) % 1, 0.25, 0.84)
+            const pulse = (0.5 + 0.5 * Math.sin(age * 2.6 + i * 2.399963 + moon.phase)) ** 10
+            colors.setXYZW(i, sparkleColor.r, sparkleColor.g, sparkleColor.b, 0.04 + pulse * 0.96)
+          }
+          colors.needsUpdate = true
+        }
       })
       if (!config.ufo) return
       flightPosition(age, craft.position)
