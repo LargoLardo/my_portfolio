@@ -14,7 +14,6 @@ const CAMPFIRE_RADIUS = 1.05
 const EYE_HEIGHT = 1.54
 const UP = new THREE.Vector3(0, 1, 0)
 const RECORD_TRACK_CONFIG_URL = '/record-player-tracks.json'
-const CONTROLS_HINT_DURATION_MS = 8000
 const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
 const SCOPE_AUTO_OPEN_DURATION = 0.85
@@ -479,7 +478,7 @@ function disposeScene(scene, renderer) {
   renderer.dispose()
 }
 
-function Panel({ discovery, onClose }) {
+function Panel({ discovery, closing, onClose, onExited }) {
   const closeRef = useRef(null)
   useEffect(() => {
     if (!discovery) return undefined
@@ -494,7 +493,9 @@ function Panel({ discovery, onClose }) {
   if (!discovery) return null
 
   return (
-    <aside className="discovery-panel" aria-label={discovery.title} style={{ '--accent': discovery.color }}>
+    <aside className={`discovery-panel ${closing ? 'is-closing' : ''}`} aria-label={discovery.title} aria-hidden={closing} inert={closing} style={{ '--accent': discovery.color }} onAnimationEnd={(event) => {
+      if (event.animationName === 'panel-exit') onExited()
+    }}>
       <button ref={closeRef} className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
         ×
       </button>
@@ -594,10 +595,10 @@ export default function App() {
   const [planetPortraits, setPlanetPortraits] = useState({})
   const [focusedTarget, setFocusedTarget] = useState(null)
   const [activeDiscovery, setActiveDiscovery] = useState(null)
+  const [discoveryClosing, setDiscoveryClosing] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sceneReady, setSceneReady] = useState(false)
   const [ignited, setIgnited] = useState(false)
-  const [controlsVisible, setControlsVisible] = useState(true)
   const [readSignAvailable, setReadSignAvailable] = useState(false)
   const readSignAvailableRef = useRef(false)
   const [signPanelOpen, setSignPanelOpen] = useState(false)
@@ -622,9 +623,6 @@ export default function App() {
     if (!value) {
       if (progressCircleRef.current) progressCircleRef.current.style.strokeDashoffset = '1'
     }
-    if (value) {
-      setControlsVisible(false)
-    }
   }, [])
 
   const toggleAudioMuted = useCallback(() => {
@@ -646,8 +644,11 @@ export default function App() {
     if (!id) return
     setCompletedDiscovery(null)
     markDiscovered(id)
+    setDiscoveryClosing(false)
     setActiveDiscovery(id)
   }, [markDiscovered])
+
+  const closeDiscovery = useCallback(() => setDiscoveryClosing(true), [])
 
   const selectDiscovery = useCallback(
     (id) => {
@@ -660,16 +661,6 @@ export default function App() {
   useEffect(() => {
     if (signPanelOpen) helpCloseRef.current?.focus({ preventScroll: true })
   }, [signPanelOpen])
-
-  useEffect(() => {
-    if (!ignited || !controlsVisible) return undefined
-
-    const hideTimer = window.setTimeout(() => {
-      setControlsVisible(false)
-    }, CONTROLS_HINT_DURATION_MS)
-
-    return () => window.clearTimeout(hideTimer)
-  }, [controlsVisible, ignited])
 
   useEffect(() => {
     const cursor = cursorRef.current
@@ -1291,7 +1282,6 @@ export default function App() {
     campfire.add(sparks)
 
     const planetMeshes = []
-    const planetRings = []
     const planetDecorRings = []
     const skyGroup = new THREE.Group()
     scene.add(skyGroup)
@@ -1338,14 +1328,6 @@ export default function App() {
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
       planet.userData.atmosphere = atmosphere
-
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(discovery.radius * 1.28, discovery.radius * 1.295, 96),
-        new THREE.MeshBasicMaterial({ color: 0xf1c78b, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide }),
-      )
-      ring.position.copy(planet.position)
-      skyGroup.add(ring)
-      planetRings.push(ring)
 
       let decorRing = null
       if (discovery.planetStyle?.rings) {
@@ -1702,7 +1684,7 @@ export default function App() {
       if (event.code === 'Escape') {
         setCompletedDiscovery(null)
         resetScopeHold()
-        setActiveDiscovery(null)
+        closeDiscovery()
         setSidebarOpen(false)
         setSignPanelOpen(false)
         setScopeActive(false)
@@ -1984,9 +1966,6 @@ export default function App() {
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
         atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
-        const ring = planetRings[index]
-        ring.lookAt(camera.position)
-        ring.material.opacity = THREE.MathUtils.lerp(ring.material.opacity, scopeAmount && focused ? 0.65 : 0, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
           decorRing.scale.copy(planet.scale)
@@ -2036,7 +2015,7 @@ export default function App() {
       }
       disposeScene(scene, renderer)
     }
-  }, [revealDiscovery, setScopeActive])
+  }, [closeDiscovery, revealDiscovery, setScopeActive])
 
   return (
     <main
@@ -2064,7 +2043,6 @@ export default function App() {
       <nav className="hud-actions" inert={!ignited} aria-label="Exploration tools">
         <button className="mute-button audio-button" type="button" aria-pressed={audioMuted} aria-label={audioMuted ? 'Unmute music' : 'Mute music'} onClick={toggleAudioMuted}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3Z" />{audioMuted ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M16 8q5 4 0 8" />}</svg>
-          {audioMuted ? 'Unmute' : 'Mute'}
         </button>
         <button
           ref={directoryButtonRef}
@@ -2115,10 +2093,6 @@ export default function App() {
         </div>
       )}
 
-      <div className={`controls-hud ${controlsVisible ? 'is-visible' : ''}`} aria-label="Controls">
-        <div><span><kbd>DRAG</kbd> look around</span><span className="desktop-control"><kbd>W A S D</kbd> explore</span><span className="desktop-control"><kbd>SPACE</kbd> hold to scan</span><span className="touch-control">Tap Signalscope to scan a planet</span></div>
-      </div>
-
       <aside id="explorer-guide" className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Explorer guide" aria-hidden={!signPanelOpen} inert={!signPanelOpen}>
         <button ref={helpCloseRef} className="sign-help-close" type="button" onClick={() => {
           setSignPanelOpen(false)
@@ -2153,7 +2127,10 @@ export default function App() {
           <a href="/">Back to portfolio ↗</a>
         </div>
       </PortfolioSidebar>
-      <Panel discovery={activeData} onClose={() => setActiveDiscovery(null)} />
+      <Panel discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
+        setActiveDiscovery(null)
+        setDiscoveryClosing(false)
+      }} />
     </main>
   )
 }
