@@ -587,8 +587,7 @@ export default function App() {
   const discoveryEventsRef = useRef([])
   const cameraTargetRef = useRef(null)
   const [scopeActiveState, setScopeActiveState] = useState(false)
-  const [scopeProximity, setScopeProximity] = useState(0)
-  const scopeProximityRef = useRef(0)
+  const scopeSignalRef = useRef(null)
   const progressCircleRef = useRef(null)
   const [completedDiscovery, setCompletedDiscovery] = useState(null)
   const [discoveredIds, setDiscoveredIds] = useState(new Set())
@@ -653,7 +652,6 @@ export default function App() {
   const selectDiscovery = useCallback(
     (id) => {
       cameraTargetRef.current = id
-      setSidebarOpen(false)
       revealDiscovery(id)
     },
     [revealDiscovery],
@@ -1488,6 +1486,7 @@ export default function App() {
     let scopeAutoOpenedTarget = null
     let scopeLostTime = 0
     let displayedProgress = 0
+    let displayedProximity = 0
     let hasStartedIntro = false
     const startTime = performance.now()
     let lastTime = startTime
@@ -1789,6 +1788,7 @@ export default function App() {
       }
 
       if (recordAudio) {
+        recordAudio.muted = audioMutedRef.current
         const recordDistance = camera.position.distanceTo(recordPlayer.position)
         if (!recordAudio.paused) {
           recordFadeElapsed = Math.min(MUSIC_FADE_SECONDS, recordFadeElapsed + dt)
@@ -1948,9 +1948,9 @@ export default function App() {
           const distance = targetDirection.length()
           targetDirection.multiplyScalar(1 / distance)
           const angle = cameraDirection.angleTo(targetDirection)
-          const lockAngle = Math.atan(DISCOVERIES[index].radius / distance) + 0.09
-          const scanAngle = lockAngle * 3.8
-          proximity = Math.max(proximity, THREE.MathUtils.clamp(1 - angle / scanAngle, 0, 1))
+          const lockAngle = Math.atan(DISCOVERIES[index].radius / distance) + 0.016
+          const scanAngle = 0.72
+          proximity = Math.max(proximity, 1 - THREE.MathUtils.clamp((angle - lockAngle) / (scanAngle - lockAngle), 0, 1))
 
           if (!focusedId && angle < lockAngle && angle < bestAngle) {
             bestAngle = angle
@@ -1958,12 +1958,16 @@ export default function App() {
           }
         })
       }
-      if (Math.abs(proximity - scopeProximityRef.current) > 0.025) {
-        scopeProximityRef.current = proximity
-        setScopeProximity(proximity)
+      if (focusedId && scopeActiveRef.current) proximity = 1
+      displayedProximity = reducedMotion ? proximity : THREE.MathUtils.damp(displayedProximity, proximity, 24, dt)
+      if (proximity === 1 && displayedProximity > 0.99) displayedProximity = 1
+      if (scopeSignalRef.current) {
+        scopeSignalRef.current.style.setProperty('--signal-gap', `${(1 - displayedProximity) * 80}px`)
+        scopeSignalRef.current.style.opacity = String(0.28 + displayedProximity * 0.72)
       }
+      if (progressCircleRef.current) progressCircleRef.current.style.opacity = displayedProximity === 1 ? '1' : '0'
       setFocus(focusedId)
-      updateScopeAutoOpen(focusedId, dt)
+      updateScopeAutoOpen(displayedProximity === 1 ? focusedId : null, dt)
 
       planetMeshes.forEach((planet, index) => {
         const focused = focusedId === DISCOVERIES[index].id
@@ -2038,10 +2042,8 @@ export default function App() {
     <main
       className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${completedDiscovery ? 'scan-complete' : ''} ${
         ignited ? 'is-lit' : ''
-      } ${sceneReady ? 'is-ready' : ''} ${sidebarOpen ? 'has-sidebar' : ''}`}
+      } ${sceneReady ? 'is-ready' : ''} ${sidebarOpen ? 'has-sidebar' : ''} ${activeDiscovery ? 'has-discovery' : ''}`}
       style={{
-        '--scope-lock-scale': 1 - scopeProximity * 0.72,
-        '--scope-lock-opacity': 0.24 + scopeProximity * 0.76,
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
@@ -2060,6 +2062,10 @@ export default function App() {
       </div>
 
       <nav className="hud-actions" inert={!ignited} aria-label="Exploration tools">
+        <button className="mute-button audio-button" type="button" aria-pressed={audioMuted} aria-label={audioMuted ? 'Unmute music' : 'Mute music'} onClick={toggleAudioMuted}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3Z" />{audioMuted ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M16 8q5 4 0 8" />}</svg>
+          {audioMuted ? 'Unmute' : 'Mute'}
+        </button>
         <button
           ref={directoryButtonRef}
           className="sections-button"
@@ -2068,7 +2074,6 @@ export default function App() {
           aria-expanded={sidebarOpen}
           onClick={() => {
             setCompletedDiscovery(null)
-            setActiveDiscovery(null)
             setSignPanelOpen(false)
             setScopeActive(false)
             setSidebarOpen((open) => !open)
@@ -2089,8 +2094,11 @@ export default function App() {
 
       <div className="scope-overlay" aria-hidden="true">
         <div className="scope-ring" />
-        <div className="scope-lock-circle" />
-        <svg className="scope-completion-band" viewBox="0 0 100 100"><circle ref={progressCircleRef} cx="50" cy="50" r="48" pathLength="1" /></svg>
+        <svg ref={scopeSignalRef} className="scope-signal" viewBox="0 0 100 100">
+          <g className="signal-half signal-half-left"><path d="M50 6a44 44 0 0 0 0 88" /></g>
+          <g className="signal-half signal-half-right"><path d="M50 6a44 44 0 0 1 0 88" /></g>
+          <circle ref={progressCircleRef} className="scope-progress" cx="50" cy="50" r="44" pathLength="1" transform="rotate(-90 50 50)" />
+        </svg>
         <div className="scope-crosshair" />
       </div>
 
@@ -2142,9 +2150,6 @@ export default function App() {
             setSidebarOpen(false)
             setSignPanelOpen(true)
           }}>Controls</button>
-          <button className="audio-button" type="button" aria-pressed={audioMuted} aria-label={audioMuted ? 'Unmute music' : 'Mute music'} onClick={toggleAudioMuted}>
-            Music {audioMuted ? 'off' : 'on'}
-          </button>
           <a href="/">Back to portfolio ↗</a>
         </div>
       </PortfolioSidebar>
