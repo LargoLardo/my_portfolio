@@ -4,6 +4,7 @@ import './space.css'
 import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
+import { createPlanetCompanions } from './spaceCompanions.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
@@ -1344,6 +1345,11 @@ export default function App() {
       }
       planetDecorRings.push(decorRing)
       portraits[discovery.id] = makePlanetPortrait(renderer, planet, decorRing, camera.position)
+      const companions = createPlanetCompanions(discovery, particleTexture)
+      companions.group.position.copy(planet.position)
+      skyGroup.add(companions.group)
+      planet.userData.companions = companions
+      planet.userData.orbitRadius = Math.max(planet.userData.orbitRadius, companions.outerRadius)
     })
 
     const burstCount = 256
@@ -1849,9 +1855,10 @@ export default function App() {
       const top = 76
       const bottom = mobile && panelBounds ? panelBounds.top - 24 : height - 70
       const centerX = (left + rightEdge) / 2, centerY = (top + bottom) / 2
-      const diameter = Math.max(80, Math.min(rightEdge - left, bottom - top) * 0.72)
+      const hasCompanions = orbitPlanet && (orbitPlanet.userData.companions.config.moonCount || orbitPlanet.userData.companions.config.ufo)
+      const diameter = Math.max(80, Math.min(rightEdge - left, bottom - top) * (hasCompanions ? 0.88 : 0.72))
       const discovery = orbitPlanet && DISCOVERY_BY_ID[orbitPlanet.userData.discoveryId]
-      const outerRadius = discovery ? discovery.radius * (discovery.planetStyle?.rings ? 2.2 : 1.1) : 1
+      const outerRadius = orbitPlanet?.userData.orbitRadius ?? 1
       const angularRadius = Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * diameter / height)
       const orbitDistance = outerRadius / Math.sin(angularRadius)
       if (orbit.active || orbitPlanet) {
@@ -1988,6 +1995,7 @@ export default function App() {
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
         const inspecting = orbitPlanet === planet
+        planet.userData.companions.update(dt, inspecting && orbit.phase === 'orbit', reducedMotion)
         const closeDetail = inspecting ? 1 - smoothstep(planetData.radius * 7, planetData.radius * 24, camera.position.distanceTo(planet.position)) : 0
         planet.material.userData.detail.value = THREE.MathUtils.damp(planet.material.userData.detail.value, closeDetail, 4, dt)
         const clouds = planet.userData.clouds
