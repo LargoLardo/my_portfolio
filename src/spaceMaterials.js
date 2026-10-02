@@ -80,11 +80,30 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
         value = 0.58 + turbulence * 0.42 - cracks * 0.45
       }
       if (style.surface === 'basalt') value = 0.1 + turbulence * 0.28 + THREE.MathUtils.smoothstep(detail, 0.57, 0.72) * 0.5
-      if (!style.bands) value = THREE.MathUtils.lerp(value, 0.94, THREE.MathUtils.smoothstep(Math.abs(ny), 0.88, 0.99) * 0.65)
+      if (style.surface === 'lunar') {
+        const maria = 1 - THREE.MathUtils.smoothstep(fractal(nx * 2.8 + seed, ny * 2.8, nz * 2.8, seed + 29), 0.42, 0.53)
+        value = 0.76 + (detail - 0.5) * 0.35 - maria * 0.53
+      }
+      if (style.surface === 'sulfur') {
+        const vents = 1 - THREE.MathUtils.smoothstep(detail, 0.26, 0.35)
+        value = THREE.MathUtils.lerp(0.15 + turbulence * 0.95 + (detail - 0.5) * 0.18, 0.03, vents * 0.9)
+      }
+      if (style.surface === 'rainbow') value = THREE.MathUtils.clamp((fractal(nx * 1.7 + seed, ny * 1.7, nz * 1.7, seed) - 0.2) * 1.7 + (detail - 0.5) * 0.035, 0, 1)
+      if (!style.bands && !['lunar', 'sulfur', 'rainbow'].includes(style.surface)) value = THREE.MathUtils.lerp(value, 0.94, THREE.MathUtils.smoothstep(Math.abs(ny), 0.88, 0.99) * 0.65)
       const stop = THREE.MathUtils.clamp(value, 0, 0.999) * (colors.length - 1)
       const index = Math.floor(stop)
       color.copy(colors[index]).lerp(colors[index + 1], stop - index)
-      const grain = 0.94 + detail * 0.12
+      let grain = style.surface === 'rainbow' ? 0.99 + detail * 0.02 : 0.94 + detail * 0.12
+      for (const crater of style.craterData ?? []) {
+        // Match SphereGeometry's UV orientation so rims follow the actual relief.
+        const dot = -nx * crater.normal.x - ny * crater.normal.y + nz * crater.normal.z
+        if (dot < Math.cos(crater.span * 2.4)) continue
+        const d = Math.sqrt(Math.max(0, 2 - 2 * dot)) / crater.span
+        const bowl = 1 - THREE.MathUtils.smoothstep(d, 0.2, 0.8)
+        const rim = Math.exp(-(((d - 0.85) / 0.09) ** 2))
+        const ejecta = (1 - THREE.MathUtils.smoothstep(d, 1, 2.4)) * THREE.MathUtils.smoothstep(detail, 0.45, 0.67)
+        grain *= 1 - bowl * 0.38 + rim * 0.65 + ejecta * 0.12
+      }
       const pixel = (y * width + x) * 4
       image.data[pixel] = color.r * 255 * grain
       image.data[pixel + 1] = color.g * 255 * grain
@@ -100,12 +119,15 @@ export function makePlanetGeometry(radius, seed, style = {}, widthSegments = 128
   const geometry = new THREE.SphereGeometry(radius, widthSegments, heightSegments)
   if (style.bands || style.craters === false) return geometry
   const craters = [], point = new THREE.Vector3()
-  for (let i = 0; i < 24 && craters.length < 8; i++) {
+  const lunar = style.surface === 'lunar'
+  const craterCount = lunar ? 32 : 16 + Math.floor(hash(0, 4, 0, seed) * 9)
+  for (let i = 0; i < 128 && craters.length < craterCount; i++) {
     const y = hash(i, 0, 0, seed) * 1.8 - 0.9, angle = hash(i, 1, 0, seed) * Math.PI * 2
     const normal = new THREE.Vector3(Math.cos(angle) * Math.sqrt(1 - y * y), y, Math.sin(angle) * Math.sqrt(1 - y * y))
-    const span = 0.1 + hash(i, 2, 0, seed) * 0.15
-    if (craters.some(crater => crater.normal.angleTo(normal) < crater.span + span + 0.06)) continue
-    craters.push({ normal, span, depth: radius * (0.02 + hash(i, 3, 0, seed) * 0.025) })
+    const size = hash(i, 2, 0, seed)
+    const span = lunar ? 0.035 + size * 0.15 : i === 0 ? 0.31 + size * 0.07 : 0.05 + size ** 1.4 * 0.26
+    if (craters.some(crater => crater.normal.angleTo(normal) < crater.span + span + 0.035)) continue
+    craters.push({ normal, span, depth: radius * (lunar ? 0.006 + span * 0.1 : 0.01 + span * 0.14) })
   }
   const positions = geometry.attributes.position
   const colors = new Float32Array(positions.count * 3)
@@ -155,12 +177,13 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
     vertexColors: !style.bands && style.craters !== false,
     roughness: style.surface === 'ice' ? 0.42 : 0.94, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.025, fog: false,
   })
-  const detail = { value: 0 }
+  const detail = { value: 0 }, hueShift = { value: 0 }
   material.userData.detail = detail
+  material.userData.hueShift = hueShift
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
       orbitDetail: detail, surfaceSeed: { value: seed }, banded: { value: style.bands ? 1 : 0 },
-      fractured: { value: style.cracked ? 1 : 0 },
+      fractured: { value: style.cracked ? 1 : 0 }, surfaceHue: hueShift,
     })
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal; varying vec3 vPlanetPoint;')
@@ -170,7 +193,12 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vPlanetNormal; varying vec3 vPlanetPoint;
-        uniform float orbitDetail, surfaceSeed, banded, fractured;
+        uniform float orbitDetail, surfaceSeed, banded, fractured, surfaceHue;
+        vec3 shiftSurfaceHue(vec3 color) {
+          vec3 axis = normalize(vec3(1.0));
+          float c = cos(surfaceHue), s = sin(surfaceHue);
+          return max(vec3(0.0), color * c + cross(axis, color) * s + axis * dot(axis, color) * (1.0 - c));
+        }
         ${planetNoise}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 surfacePoint = normalize(vPlanetPoint);
@@ -181,7 +209,7 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
         float fissure = 1.0 - smoothstep(0.025, 0.09, abs(turbulence - 0.5));
         float relief = mix(ridges * 0.7 + grain * 0.3 - fissure * fractured * 0.4, bands * 0.6 + turbulence * 0.4, banded);
         float surfaceTint = mix(1.0, 0.72 + relief * 0.55, orbitDetail);
-        diffuseColor.rgb *= surfaceTint;`)
+        diffuseColor.rgb = shiftSurfaceHue(diffuseColor.rgb) * surfaceTint;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         float height = relief * orbitDetail * mix(0.045, 0.006, banded);
         normal = perturbNormalArb(-vViewPosition, normal, vec2(dFdx(height), dFdy(height)), faceDirection);`)
@@ -190,7 +218,7 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
           totalEmissiveRadiance *= vColor.rgb;
         #endif
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
-        totalEmissiveRadiance *= surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
+        totalEmissiveRadiance = shiftSurfaceHue(totalEmissiveRadiance) * surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
   }
   return material
 }
@@ -230,17 +258,19 @@ export function makeParticleTexture() {
   return new THREE.CanvasTexture(canvas)
 }
 
-export function makeRingTexture(seed) {
+export function makeRingTexture(seed, planetColor) {
   const canvas = document.createElement('canvas')
   canvas.width = 512
   canvas.height = 1
   const context = canvas.getContext('2d')
+  const color = new THREE.Color(planetColor).offsetHSL(seed % 2 ? 0.025 : -0.025, 0.1, 0.08).convertLinearToSRGB()
+  const rgb = [color.r, color.g, color.b].map(channel => Math.round(channel * 255)).join(',')
   for (let x = 0; x < 512; x += 1) {
     const t = x / 512
     const band = 0.8 + hash(x, 0, 0, seed) * 0.13 + Math.sin(t * 180) * 0.06
     const edge = Math.min(1, t * 28, (1 - t) * 18)
     const gap = t > 0.61 && t < 0.66 ? 0.06 : 1
-    context.fillStyle = `rgba(194,180,149,${band * edge * gap})`
+    context.fillStyle = `rgba(${rgb},${band * edge * gap})`
     context.fillRect(x, 0, 1, 1)
   }
   const texture = new THREE.CanvasTexture(canvas)

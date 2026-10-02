@@ -9,6 +9,16 @@ const MOON_PALETTES = [
   ['#202830', '#405d69', '#83a8ac', '#d0ddda'],
   ['#292338', '#665572', '#aa94ae', '#d6cbd4'],
 ]
+const VARIANT_PALETTES = {
+  lunar: ['#303239', '#62656a', '#aaa9a4', '#dedbd2'],
+  sulfur: ['#362929', '#975330', '#c6a43d', '#e8d77e', '#d9d4d0', '#a69abc'],
+  rainbow: ['#3d55b7', '#65a4d5', '#69c8ac', '#e4d189', '#dda4b7', '#9b87ca'],
+}
+
+export function rollMoonSurface(random = Math.random) {
+  const roll = random()
+  return roll < 0.125 ? 'lunar' : roll < 0.25 ? 'sulfur' : roll < 0.3 ? 'rainbow' : null
+}
 
 export function rollPlanetCompanions(random = Math.random) {
   const roll = random()
@@ -57,17 +67,19 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     const orbit = previousOrbit + previousRadius + moonRadius + radius * 0.36
     previousOrbit = orbit
     previousRadius = moonRadius
-    const surface = ['dust', 'ice', 'basalt'][(surfaceOffset + i) % 3]
-    const style = { surface, cracked: surface === 'ice', craters: surface !== 'ice' }
+    const surface = rollMoonSurface(random) ?? ['dust', 'ice', 'basalt'][(surfaceOffset + i) % 3]
+    const style = { surface, cracked: surface === 'ice', craters: surface !== 'ice' && surface !== 'rainbow' }
     const seed = Math.floor(random() * 100000)
-    const texture = new THREE.CanvasTexture(makePlanetTexture(MOON_PALETTES[(paletteOffset + i) % MOON_PALETTES.length], seed, style, 256, 128))
+    const geometry = makePlanetGeometry(moonRadius, seed, style, surface === 'lunar' ? 96 : 64, 64)
+    const palette = VARIANT_PALETTES[surface] ?? MOON_PALETTES[(paletteOffset + i) % MOON_PALETTES.length]
+    const texture = new THREE.CanvasTexture(makePlanetTexture(palette, seed, { ...style, craterData: geometry.userData.craters }, 512, 256))
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)
     material.emissiveIntensity = 0.72
-    material.bumpScale = moonRadius * (surface === 'ice' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
-    material.userData.detail.value = 1
-    const mesh = new THREE.Mesh(makePlanetGeometry(moonRadius, seed, style, 64, 48), material)
+    material.bumpScale = moonRadius * (surface === 'rainbow' ? 0.007 : surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
+    material.userData.detail.value = surface === 'rainbow' ? 0.2 : surface === 'lunar' ? 0.6 : 1
+    const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `moon-${i + 1}`
     group.add(mesh)
     moons.push({
@@ -174,6 +186,7 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
       moons.forEach(moon => {
         moonPosition(moon, age, moon.mesh.position)
         if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
+        if (moon.surface === 'rainbow') moon.mesh.material.userData.hueShift.value = age * TAU / 90
       })
       if (!config.ufo) return
       flightPosition(age, craft.position)

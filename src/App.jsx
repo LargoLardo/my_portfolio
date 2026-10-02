@@ -1292,11 +1292,12 @@ export default function App() {
     const portraits = {}
     const companionConfigs = rollSystemCompanions(DISCOVERIES.length)
     DISCOVERIES.forEach((discovery, index) => {
-      const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle))
+      const geometry = makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle)
+      const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, { ...discovery.planetStyle, craterData: geometry.userData.craters }))
       planetTexture.colorSpace = THREE.SRGBColorSpace
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
-        makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle),
+        geometry,
         makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle),
       )
       planet.position.set(...discovery.position).multiplyScalar(1.65)
@@ -1334,10 +1335,10 @@ export default function App() {
           geometry.attributes.uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
         }
         decorRing = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-          map: makeRingTexture(index + 1), roughness: 1, transparent: true, opacity: 1,
+          map: makeRingTexture(index + 1, discovery.palette[2]), roughness: 1, transparent: true, opacity: 1,
           depthWrite: false, side: THREE.DoubleSide, fog: false,
         }))
-        decorRing.material.emissive.set(0x656457)
+        decorRing.material.emissive.set(0x777777)
         decorRing.material.emissiveMap = decorRing.material.map
         decorRing.material.emissiveIntensity = 0
         decorRing.position.copy(planet.position)
