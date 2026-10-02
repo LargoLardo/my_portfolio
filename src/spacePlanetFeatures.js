@@ -124,7 +124,7 @@ export function createPlanetFeatures(discovery, planet, random = Math.random) {
   }
 
   // Deform the actual globe for bowls below the surface; restore it at camp.
-  let originalPositions = null, craterPositions = null, originalNormals = null, craterNormals = null
+  let originalPositions = null, craterPositions = null, originalNormals = null, craterNormals = null, craterColors = null
   if (config.craters) {
     const craters = []
     for (let i = 0; i < 5; i++) {
@@ -135,9 +135,10 @@ export function createPlanetFeatures(discovery, planet, random = Math.random) {
     const geometry = planet.geometry, positions = geometry.attributes.position
     originalPositions = positions.array.slice()
     originalNormals = geometry.attributes.normal.array.slice()
+    craterColors = new Float32Array(positions.array.length).fill(1)
     for (let i = 0; i < positions.count; i++) {
       scratch.fromBufferAttribute(positions, i).normalize()
-      let height = 0
+      let height = 0, tint = 1
       for (const crater of craters) {
         const angle = Math.atan2(scratch.dot(crater.north), scratch.dot(crater.east))
         const d = scratch.angleTo(crater.normal) / (crater.span * (1 + Math.sin(angle * 7 + crater.phase) * 0.035))
@@ -145,9 +146,11 @@ export function createPlanetFeatures(discovery, planet, random = Math.random) {
         const bowl = -crater.depth * Math.max(0, 1 - (d / 0.79) ** 2) ** 2
         const rim = crater.depth * 0.46 * Math.exp(-(((d - 0.81) / 0.14) ** 2))
         height += bowl + rim
+        tint += (bowl * 0.48 + rim * 0.45) / crater.depth
       }
       scratch.multiplyScalar(radius + height)
       positions.setXYZ(i, scratch.x, scratch.y, scratch.z)
+      craterColors.fill(tint, i * 3, i * 3 + 3)
     }
     geometry.computeVertexNormals()
     craterPositions = positions.array.slice()
@@ -156,6 +159,9 @@ export function createPlanetFeatures(discovery, planet, random = Math.random) {
     geometry.attributes.normal.array.set(originalNormals)
     geometry.computeBoundingSphere()
     geometry.boundingSphere.radius = radius * 1.03
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(craterColors.length).fill(1), 3))
+    planet.material.vertexColors = true
+    planet.material.needsUpdate = true
   }
 
   if (config.mountains) {
@@ -337,10 +343,12 @@ export function createPlanetFeatures(discovery, planet, random = Math.random) {
     group, config,
     update(dt, inspecting, reducedMotion) {
       if (config.craters && group.visible !== inspecting) {
-        const { position, normal } = planet.geometry.attributes
+        const { position, normal, color } = planet.geometry.attributes
         position.array.set(inspecting ? craterPositions : originalPositions)
         normal.array.set(inspecting ? craterNormals : originalNormals)
-        position.needsUpdate = normal.needsUpdate = true
+        if (inspecting) color.array.set(craterColors)
+        else color.array.fill(1)
+        position.needsUpdate = normal.needsUpdate = color.needsUpdate = true
       }
       group.visible = inspecting
       if (!inspecting) { fade = 0; return }

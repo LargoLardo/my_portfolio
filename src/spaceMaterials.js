@@ -144,6 +144,9 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
         float height = relief * orbitDetail * mix(0.045, 0.006, banded);
         normal = perturbNormalArb(-vViewPosition, normal, vec2(dFdx(height), dFdy(height)), faceDirection);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        #ifdef USE_COLOR
+          totalEmissiveRadiance *= vColor.rgb;
+        #endif
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
         totalEmissiveRadiance *= surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
   }

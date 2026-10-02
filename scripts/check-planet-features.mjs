@@ -68,6 +68,8 @@ for (const world of [cool, warm]) {
     minRadius = Math.min(minRadius, r); maxRadius = Math.max(maxRadius, r)
   }
   assert.ok(minRadius < world.radius * 0.99 && maxRadius > world.radius * 1.003, 'Craters need depressed bowls and raised rims')
+  const craterTint = planet.geometry.attributes.color.array
+  assert.ok(craterTint.some(v => v < 0.65) && craterTint.some(v => v > 1.1), 'Crater bowls and rims need readable contrast')
   const drops = group.getObjectByName('rain').geometry.attributes.position.array
   const before = [...drops]
   features.update(0.1, true, false)
@@ -84,6 +86,7 @@ for (const world of [cool, warm]) {
   features.update(1, false, false)
   assert.equal(group.visible, false, 'Features must disappear on leaving inspection')
   assert.deepEqual(planet.geometry.attributes.position.array, original, 'Leaving restores the distant globe')
+  assert.ok(craterTint.every(v => v === 1), 'Leaving restores the original globe colors')
   features.update(1, true, false)
   assert.equal(rolls, rollsUsed, 'Revisiting must keep the same features')
   assert.deepEqual(planet.geometry.attributes.position.array, deformed, 'Revisiting preserves the same craters')
