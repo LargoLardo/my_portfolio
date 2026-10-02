@@ -802,8 +802,8 @@ canvas {
 
 .saturn-attention-ring {
   position: absolute;
-  width: 76px;
-  height: 76px;
+  width: 133px;
+  height: 133px;
   border: 2px solid #f5d99a;
   border-radius: 50%;
   opacity: 0;
