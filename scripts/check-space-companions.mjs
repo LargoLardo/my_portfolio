@@ -114,7 +114,7 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
   system.update(1, 1, false)
   if (surface === 'rainbow') {
     assert.equal(material.userData.rainbowTime.value, 2, 'Color pulses advance with active animation time')
-    assert.ok(material.emissiveIntensity > 0.72 && material.emissiveIntensity < 1, 'Rainbow moons have a subtle emissive lift')
+    assert.equal(material.emissiveIntensity, 1.92, 'Rainbow glow is 20% softer than the full neon setting')
     assert.equal(material.color.r, 1.4)
     assert.notDeepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Surface glints should shimmer')
     const { position: positions, color: colors } = moon.sparkles.geometry.attributes
@@ -139,11 +139,14 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
     system.update(0, 0.5, false)
     assert.equal(moon.sparkles.material.opacity, moon.sparkles.material.userData.baseOpacity * 0.5, 'Sparkles fade with the moon')
     assert.equal(moon.glow.material.uniforms.opacity.value, moon.glow.material.userData.baseOpacity * 0.5, 'Glow fades with the moon')
+    assert.equal(moon.halo.material.opacity, moon.halo.material.userData.baseOpacity * 0.5, 'Soft halo fades with the moon')
     moon.sparkles.geometry.dispose(); moon.sparkles.material.dispose()
     moon.glow.geometry.dispose(); moon.glow.material.dispose()
+    moon.halo.material.dispose()
   } else {
     assert.equal(moon.sparkles, null)
     assert.equal(moon.glow, null)
+    assert.equal(moon.halo, null)
   }
   assert.equal(material.map.version, version, 'Color shifts must not regenerate or upload textures')
   moon.mesh.geometry.dispose(); material.map.dispose(); material.dispose()

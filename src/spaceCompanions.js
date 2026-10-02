@@ -78,20 +78,27 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)
-    material.emissiveIntensity = surface === 'rainbow' ? 0.86 : 0.72
-    material.bumpScale = moonRadius * (surface === 'rainbow' ? 0.007 : surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
-    material.userData.detail.value = surface === 'rainbow' ? 0.2 : surface === 'lunar' ? 0.6 : 1
+    material.emissiveIntensity = surface === 'rainbow' ? 1.92 : 0.72
+    material.bumpScale = moonRadius * (surface === 'rainbow' || surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
+    material.userData.detail.value = surface === 'lunar' ? 0.6 : 1
     const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `moon-${i + 1}`
     group.add(mesh)
-    let sparkles = null, glow = null
+    let sparkles = null, glow = null, halo = null
     const glints = []
     if (surface === 'rainbow') {
-      const glowMaterial = makeAtmosphereMaterial('#b4a1ed')
-      glowMaterial.opacity = 0.28
-      glow = new THREE.Mesh(new THREE.SphereGeometry(moonRadius * 1.055, 48, 32), register(glowMaterial))
+      const glowMaterial = makeAtmosphereMaterial('#39e8ff')
+      glowMaterial.opacity = 0.85
+      glow = new THREE.Mesh(new THREE.SphereGeometry(moonRadius * 1.025, 48, 32), register(glowMaterial))
       glow.name = 'rainbow-glow'
       mesh.add(glow)
+      halo = new THREE.Sprite(register(new THREE.SpriteMaterial({
+        map: particleTexture, color: '#39e8ff', opacity: 0.8,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+      })))
+      halo.name = 'rainbow-halo'
+      halo.scale.setScalar(moonRadius * 3.4)
+      mesh.add(halo)
       const count = 24, positions = new Float32Array(count * 3)
       for (let j = 0; j < count; j++) {
         glints.push({ start: -Infinity, duration: 0 })
@@ -101,14 +108,14 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
       geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 4), 4))
       geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), moonRadius * 1.005)
       sparkles = new THREE.Points(geometry, register(new THREE.PointsMaterial({
-        map: particleTexture, size: moonRadius * 0.32, opacity: 1, vertexColors: true,
+        map: particleTexture, size: moonRadius * 0.64, opacity: 1, vertexColors: true,
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
       })))
       sparkles.name = 'rainbow-sparkles'
       mesh.add(sparkles)
     }
     moons.push({
-      mesh, radius: moonRadius, surface, orbit, sparkles, glints, glow,
+      mesh, radius: moonRadius, surface, orbit, sparkles, glints, glow, halo,
       phase: random() * TAU,
       speed: orbitalRate * (0.35 + random() * 2.1) * (moons.length ? (moons[0].orbit / orbit) ** 1.5 : 1),
       spin: 0.015 + random() * 0.06,
@@ -216,7 +223,8 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
         if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
         if (moon.surface === 'rainbow') {
           moon.mesh.material.userData.rainbowTime.value = age
-          moon.glow.material.uniforms.tint.value.setHSL((age / 8 + moon.phase / TAU) % 1, 0.5, 0.7)
+          moon.glow.material.uniforms.tint.value.setHSL((age / 8 + moon.phase / TAU) % 1, 0.9, 0.6)
+          moon.halo.material.color.copy(moon.glow.material.uniforms.tint.value)
           const { position: positions, color: colors } = moon.sparkles.geometry.attributes
           for (let i = 0; i < colors.count; i++) {
             const glint = moon.glints[i]

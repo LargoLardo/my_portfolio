@@ -111,7 +111,7 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
       const stop = THREE.MathUtils.clamp(value, 0, 0.999) * (colors.length - 1)
       const index = Math.floor(stop)
       color.copy(colors[index]).lerp(colors[index + 1], stop - index)
-      let grain = style.surface === 'rainbow' ? 0.99 + detail * 0.02 : 0.94 + detail * 0.12
+      let grain = style.surface === 'rainbow' ? 0.8 + detail * 0.4 : 0.94 + detail * 0.12
       for (const crater of style.craterData ?? []) {
         // Match SphereGeometry's UV orientation so rims follow the actual relief.
         const dot = -nx * crater.normal.x - ny * crater.normal.y + nz * crater.normal.z
@@ -215,7 +215,10 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
         vec3 shiftSurfaceHue(vec3 color, float hue) {
           vec3 axis = normalize(vec3(1.0));
           float c = cos(hue), s = sin(hue);
-          return max(vec3(0.0), color * c + cross(axis, color) * s + axis * dot(axis, color) * (1.0 - c));
+          vec3 shifted = max(vec3(0.0), color * c + cross(axis, color) * s + axis * dot(axis, color) * (1.0 - c));
+          // Keep the full rainbow saturated under the stronger emission.
+          float neutral = min(shifted.r, min(shifted.g, shifted.b));
+          return shifted - neutral * 0.65 * rainbow;
         }
         ${planetNoise}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -244,7 +247,9 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
           totalEmissiveRadiance *= vColor.rgb;
         #endif
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
-        totalEmissiveRadiance = shiftSurfaceHue(totalEmissiveRadiance, surfaceHue) * surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
+        // Neon moons emit their own light, including on the shaded hemisphere.
+        float illumination = mix(mix(0.06, 0.14, orbitDetail) + 0.94 * daylight, 0.7 + 0.3 * daylight, rainbow);
+        totalEmissiveRadiance = shiftSurfaceHue(totalEmissiveRadiance, surfaceHue) * surfaceTint * illumination;`)
   }
   return material
 }
