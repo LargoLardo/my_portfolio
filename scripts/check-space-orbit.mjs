@@ -23,8 +23,10 @@ const step = (planet, seconds, distance = 15, reduced = false) => {
   }
 }
 for (const planet of planets) {
-  step(planet, 3)
-  assert.equal(orbit.phase, 'orbit')
+  step(planet, 59 / 60)
+  assert.equal(orbit.phase, 'approach', 'Flight should still be moving just before one second')
+  step(planet, 1 / 60)
+  assert.equal(orbit.phase, 'orbit', 'Every destination should be reached in one second')
   assert.ok(Math.abs(camera.position.distanceTo(planet.position) - 15) < 1e-6)
   const from = camera.position.clone()
   step(planet, 1)
@@ -33,8 +35,10 @@ for (const planet of planets) {
   orbit.drag(120, -60)
   step(planet, 1)
 }
-step(null, 3)
-assert.equal(orbit.phase, 'ground')
+step(null, 59 / 60)
+assert.equal(orbit.phase, 'returning')
+step(null, 1 / 60)
+assert.equal(orbit.phase, 'ground', 'The campsite should be reached in one second')
 assert.ok(camera.position.distanceTo(home) < 1e-8)
 assert.ok(camera.quaternion.angleTo(rotation) < 1e-7)
 step(planets[0], 0.8)

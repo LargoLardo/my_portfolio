@@ -188,7 +188,7 @@
 .section-list strong { font-size: 14px; font-weight: 550; line-height: 1.35; }
 .section-list small { color: var(--suit-muted); font-size: 11px; line-height: 1.5; }
 
-.discovery-panel { top: 80px; left: 36px; bottom: 86px; width: min(360px, 28vw); padding: 28px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 140ms ease-out; transition: bottom 220ms ease; }
+.discovery-panel { top: 80px; left: 36px; bottom: 86px; width: min(480px, 34vw); padding: 28px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 140ms ease-out; transition: bottom 220ms ease; }
 .discovery-panel.is-closing { pointer-events: none; animation: panel-exit 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 .panel-close { position: absolute; top: 20px; right: 20px; }
 .panel-eyebrow { margin: 0 0 28px; padding-right: 24px; }

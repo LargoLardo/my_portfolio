@@ -1896,14 +1896,17 @@ export default function App() {
         const visible = orbit.phase === 'orbit' && orbitPlanet && panelBounds
         connector.style.opacity = visible ? '0.65' : '0'
         if (visible) {
-          projected.copy(orbitPlanet.position).project(camera)
-          const x = (projected.x + 1) * width / 2, y = (1 - projected.y) * height / 2
-          const distance = camera.position.distanceTo(orbitPlanet.position)
-          const radius = discovery.radius / Math.sqrt(distance * distance - discovery.radius ** 2) * height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))
+          // Project a point on the visible hemisphere so the marker rests on
+          // the actual globe, including its scale, rather than outside its rim.
+          projected.set(mobile ? 0 : -0.82, mobile ? -0.82 : 0, Math.sqrt(1 - 0.82 ** 2))
+            .applyQuaternion(camera.quaternion)
+            .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
+            .add(orbitPlanet.position)
+            .project(camera)
           const startX = mobile ? panelBounds.left + panelBounds.width / 2 : panelBounds.right
           const startY = mobile ? panelBounds.top : panelBounds.top + Math.min(160, panelBounds.height / 2)
-          const endX = mobile ? x : x - radius - 8
-          const endY = mobile ? y + radius + 8 : y
+          const endX = (projected.x + 1) * width / 2
+          const endY = (1 - projected.y) * height / 2
           connector.querySelector('path').setAttribute('d', mobile
             ? `M${startX},${startY} L${startX},${endY + 16} L${endX},${endY}`
             : `M${startX},${startY} L${endX - 24},${startY} L${endX},${endY}`)

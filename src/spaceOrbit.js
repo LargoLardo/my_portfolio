@@ -89,7 +89,7 @@ export function createPlanetOrbit(camera, onPhaseChange, planets) {
       distance = THREE.MathUtils.damp(distance, desiredDistance, 5, dt)
       if (phase === 'approach' || phase === 'returning') {
         age += dt
-        const t = reducedMotion ? 1 : Math.min(1, age / 2.4)
+        const t = reducedMotion ? 1 : Math.min(1, age)
         const eased = t * t * (3 - 2 * t)
         if (target) path.v3.copy(orbitPosition())
         path.getPoint(eased, camera.position)
