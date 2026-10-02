@@ -17,7 +17,7 @@ function noise(x, y, z, seed) {
   )
 }
 
-function fractal(x, y, z, seed) {
+export function fractal(x, y, z, seed) {
   return noise(x, y, z, seed) * 0.56 + noise(x * 2.1, y * 2.1, z * 2.1, seed) * 0.28 + noise(x * 4.3, y * 4.3, z * 4.3, seed) * 0.16
 }
 
@@ -91,7 +91,7 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
 }
 
 // Object-space noise stays attached to the rotating globe and has no UV seam.
-const planetNoise = `
+export const planetNoise = `
   float planetHash(vec3 p) {
     p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33);
     return fract((p.x + p.y) * p.z);
@@ -146,27 +146,6 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
         totalEmissiveRadiance *= surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
-  }
-  return material
-}
-
-export function makePlanetCloudMaterial(seed, color) {
-  const material = new THREE.MeshStandardMaterial({
-    color, emissive: color, emissiveIntensity: 0.09, transparent: true,
-    opacity: 0, depthWrite: false, roughness: 1, fog: false,
-  })
-  material.onBeforeCompile = shader => {
-    shader.uniforms.cloudSeed = { value: seed }
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCloudPoint;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloudPoint = position;')
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vCloudPoint; uniform float cloudSeed; ${planetNoise}`)
-      .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
-        vec3 p = normalize(vCloudPoint);
-        float warp = planetFbm(p * 5.0 + cloudSeed);
-        float cloud = planetFbm(p * vec3(9.0, 18.0, 9.0) + warp * 4.0 + cloudSeed);
-        diffuseColor.a *= smoothstep(0.51, 0.72, cloud);`)
   }
   return material
 }

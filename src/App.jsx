@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { createPlanetFeatures } from './spacePlanetFeatures.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -1292,6 +1293,7 @@ export default function App() {
     DISCOVERIES.forEach((discovery, index) => {
       const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle))
       planetTexture.colorSpace = THREE.SRGBColorSpace
+      planetTexture.wrapS = THREE.RepeatWrapping
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
         new THREE.SphereGeometry(discovery.radius, 128, 96),
@@ -1312,15 +1314,6 @@ export default function App() {
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
       planet.userData.atmosphere = atmosphere
-      if (!discovery.planetStyle.bands && !discovery.planetStyle.cracked) {
-        const clouds = new THREE.Mesh(
-          new THREE.SphereGeometry(discovery.radius * 1.008, 96, 64),
-          makePlanetCloudMaterial(index + 21, discovery.palette.at(-1)),
-        )
-        clouds.position.copy(planet.position)
-        skyGroup.add(clouds)
-        planet.userData.clouds = clouds
-      }
 
       let decorRing = null
       if (discovery.planetStyle?.rings) {
@@ -1990,13 +1983,12 @@ export default function App() {
         const inspecting = orbitPlanet === planet
         const closeDetail = inspecting ? 1 - smoothstep(planetData.radius * 7, planetData.radius * 24, camera.position.distanceTo(planet.position)) : 0
         planet.material.userData.detail.value = THREE.MathUtils.damp(planet.material.userData.detail.value, closeDetail, 4, dt)
-        const clouds = planet.userData.clouds
-        if (clouds) {
-          clouds.material.opacity = planet.material.userData.detail.value * 0.52
-          clouds.visible = clouds.material.opacity > 0.001
-          clouds.scale.copy(planet.scale)
-          if (!reducedMotion) clouds.rotation.y += dt * (0.018 + index * 0.002)
+        const inspectFeatures = inspecting && orbit.phase === 'orbit'
+        if (inspectFeatures && !planet.userData.features) {
+          planet.userData.features = createPlanetFeatures(planetData, planet)
+          planet.add(planet.userData.features.group)
         }
+        planet.userData.features?.update(dt, inspectFeatures, reducedMotion)
         const spotted = focused && scopeAmount
         const brightness = inspecting ? 1.45 : scopeAmount ? 1.7 : planet.userData.discovered ? 0.95 : 0.62
         planetTint.setRGB(brightness, brightness, brightness)
@@ -2028,6 +2020,17 @@ export default function App() {
               .applyQuaternion(camera.quaternion)
               .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
               .add(orbitPlanet.position)
+            // Land the marker on the generated relief, including crater bowls.
+            orbitPlanet.updateWorldMatrix(true, true)
+            anchorNormal.copy(projected).sub(orbitPlanet.position).normalize()
+            anchorView.copy(orbitPlanet.position).addScaledVector(anchorNormal, discovery.radius * 1.3)
+            raycaster.set(anchorView, anchorNormal.negate())
+            const surfaces = [orbitPlanet]
+            orbitPlanet.userData.features?.group.traverse(object => {
+              if (object.userData.isTerrain) surfaces.push(object)
+            })
+            const surfaceHit = raycaster.intersectObjects(surfaces, false)[0]
+            if (surfaceHit) projected.copy(surfaceHit.point)
             orbitPlanet.userData.menuAnchor = orbitPlanet.worldToLocal(projected.clone())
           }
           orbitPlanet.localToWorld(projected.copy(orbitPlanet.userData.menuAnchor))
