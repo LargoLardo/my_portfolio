@@ -800,6 +800,16 @@ canvas {
 .saturn-link:hover .saturn-ring { animation-duration: 0.6s; }
 .saturn-link:hover .saturn-planet { animation-duration: 0.7s; }
 
+.saturn-attention-ring {
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  border: 2px solid #f5d99a;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .life-controls {
   position: sticky;
   width: max-content;
