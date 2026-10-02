@@ -95,6 +95,11 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
   creating = false
   const moon = system.moons[0], material = moon.mesh.material
   assert.equal(moon.surface, surface)
+  const maxMoonRadius = 3 * 0.335
+  if (surface === 'rainbow') {
+    assert.ok(moon.radius >= maxMoonRadius * 0.6 && moon.radius <= maxMoonRadius, 'Rainbow moons must be between 60% and 100% of maximum moon size')
+    assert.equal(moon.mesh.geometry.parameters.radius, moon.radius, 'The size floor must apply to the rendered surface')
+  } else assert.ok(moon.radius < maxMoonRadius * 0.6, 'Small non-rainbow moons keep their original sizes')
   if (surface === 'lunar') assert.ok(moon.mesh.geometry.userData.craters.length >= 20, 'Lunar moons need dense crater relief')
   assert.equal(material.map.image.width, 512, 'Detailed moons need high resolution textures')
   const version = material.map.version
@@ -178,7 +183,7 @@ for (const rings of [false, true]) {
     orbitalSpeeds.push(...system.moons.map(moon => moon.speed))
     if (count === 3) {
       const radii = system.moons.map(moon => moon.radius)
-      assert.ok(Math.max(...radii) / Math.min(...radii) > 1.8, 'Moon sizes should vary visibly')
+      assert.ok(Math.max(...radii) / Math.min(...radii) > 1.3, 'Moon sizes should still vary with the rainbow minimum')
       const ice = system.moons.find(moon => moon.surface === 'ice')
       if (ice) assert.equal(ice.mesh.geometry.userData.craters, undefined)
     }

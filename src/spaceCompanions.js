@@ -65,11 +65,13 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     return material
   }
   for (let i = 0; i < config.moonCount; i++) {
-    const moonRadius = radius * (0.09 + ((sizeOffset + i) % 3) * 0.095 + random() * 0.055)
+    let moonRadius = radius * (0.09 + ((sizeOffset + i) % 3) * 0.095 + random() * 0.055)
+    const surface = rollMoonSurface(random) ?? ['dust', 'ice', 'basalt'][(surfaceOffset + i) % 3]
+    // Enforce the size floor before calculating orbit spacing and effect sizes.
+    if (surface === 'rainbow') moonRadius = Math.max(moonRadius, radius * (0.09 + 2 * 0.095 + 0.055) * 0.6)
     const orbit = previousOrbit + previousRadius + moonRadius + radius * 0.36
     previousOrbit = orbit
     previousRadius = moonRadius
-    const surface = rollMoonSurface(random) ?? ['dust', 'ice', 'basalt'][(surfaceOffset + i) % 3]
     const style = { surface, cracked: surface === 'ice', craters: surface !== 'ice' && surface !== 'rainbow' }
     const seed = Math.floor(random() * 100000)
     const geometry = makePlanetGeometry(moonRadius, seed, style, surface === 'lunar' ? 96 : 64, 64)
