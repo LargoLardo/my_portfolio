@@ -1,7 +1,8 @@
 import * as THREE from 'three'
-import { makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry } from './spaceMaterials.js'
+import { makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makeAtmosphereMaterial } from './spaceMaterials.js'
 
 const TAU = Math.PI * 2
+const RAINBOW_MOON_CHANCE = 0.5 // Temporarily raised from 0.05.
 const UP = new THREE.Vector3(0, 1, 0)
 const MOON_PALETTES = [
   ['#242b34', '#596575', '#a0adbb', '#d4d7d9'],
@@ -17,7 +18,7 @@ const VARIANT_PALETTES = {
 
 export function rollMoonSurface(random = Math.random) {
   const roll = random()
-  return roll < 0.125 ? 'lunar' : roll < 0.25 ? 'sulfur' : roll < 0.3 ? 'rainbow' : null
+  return roll < 0.125 ? 'lunar' : roll < 0.25 ? 'sulfur' : roll < 0.25 + RAINBOW_MOON_CHANCE ? 'rainbow' : null
 }
 
 export function rollPlanetCompanions(random = Math.random) {
@@ -77,23 +78,28 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)
-    material.emissiveIntensity = 0.72
+    material.emissiveIntensity = surface === 'rainbow' ? 0.86 : 0.72
     material.bumpScale = moonRadius * (surface === 'rainbow' ? 0.007 : surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
     material.userData.detail.value = surface === 'rainbow' ? 0.2 : surface === 'lunar' ? 0.6 : 1
     const mesh = new THREE.Mesh(geometry, material)
     mesh.name = `moon-${i + 1}`
     group.add(mesh)
-    let sparkles = null
+    let sparkles = null, glow = null
+    const glints = []
     if (surface === 'rainbow') {
-      const count = 32, positions = new Float32Array(count * 3)
+      const glowMaterial = makeAtmosphereMaterial('#b4a1ed')
+      glowMaterial.opacity = 0.28
+      glow = new THREE.Mesh(new THREE.SphereGeometry(moonRadius * 1.055, 48, 32), register(glowMaterial))
+      glow.name = 'rainbow-glow'
+      mesh.add(glow)
+      const count = 24, positions = new Float32Array(count * 3)
       for (let j = 0; j < count; j++) {
-        const y = 1 - 2 * (j + 0.5) / count, angle = j * 2.399963 + seed
-        const r = Math.sqrt(1 - y * y) * moonRadius * 1.02
-        positions.set([Math.cos(angle) * r, y * moonRadius * 1.02, Math.sin(angle) * r], j * 3)
+        glints.push({ start: -Infinity, duration: 0 })
       }
       const geometry = new THREE.BufferGeometry()
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 4), 4))
+      geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), moonRadius * 1.005)
       sparkles = new THREE.Points(geometry, register(new THREE.PointsMaterial({
         map: particleTexture, size: moonRadius * 0.32, opacity: 1, vertexColors: true,
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
@@ -102,9 +108,9 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
       mesh.add(sparkles)
     }
     moons.push({
-      mesh, radius: moonRadius, surface, orbit, sparkles,
+      mesh, radius: moonRadius, surface, orbit, sparkles, glints, glow,
       phase: random() * TAU,
-      speed: orbitalRate * (0.85 + random() * 0.3) * (moons.length ? (moons[0].orbit / orbit) ** 1.5 : 1),
+      speed: orbitalRate * (0.35 + random() * 2.1) * (moons.length ? (moons[0].orbit / orbit) ** 1.5 : 1),
       spin: 0.015 + random() * 0.06,
       tilt: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18 + random() * 0.35, random() * TAU, (random() - 0.5) * 0.4)),
     })
@@ -199,7 +205,10 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     group, config, moons, craft, outerRadius,
     update(dt, opacity, reducedMotion) {
       group.visible = opacity > 0 && Boolean(moons.length || config.ufo)
-      materials.forEach(material => { material.opacity = material.userData.baseOpacity * opacity })
+      materials.forEach(material => {
+        material.opacity = material.userData.baseOpacity * opacity
+        if (material.uniforms?.opacity) material.uniforms.opacity.value = material.opacity
+      })
       if (dt === 0 && !group.visible) return
       if (!reducedMotion) age += dt
       moons.forEach(moon => {
@@ -207,11 +216,23 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
         if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
         if (moon.surface === 'rainbow') {
           moon.mesh.material.userData.rainbowTime.value = age
-          const colors = moon.sparkles.geometry.attributes.color
+          moon.glow.material.uniforms.tint.value.setHSL((age / 8 + moon.phase / TAU) % 1, 0.5, 0.7)
+          const { position: positions, color: colors } = moon.sparkles.geometry.attributes
           for (let i = 0; i < colors.count; i++) {
+            const glint = moon.glints[i]
+            if (age >= glint.start + glint.duration) {
+              // Move only while invisible; each flash belongs to a fresh surface spot.
+              const y = random() * 2 - 1, angle = random() * TAU
+              const radius = moon.radius * 1.005, r = Math.sqrt(1 - y * y) * radius
+              positions.setXYZ(i, Math.cos(angle) * r, y * radius, Math.sin(angle) * r)
+              positions.needsUpdate = true
+              glint.start = age + random() * 0.9
+              glint.duration = 0.45 + random() * 0.7
+            }
             sparkleColor.setHSL((age / 6 + i * 0.073) % 1, 0.32, 0.9)
-            const pulse = (0.5 + 0.5 * Math.sin(age * 3.2 + i * 2.399963 + moon.phase)) ** 4
-            colors.setXYZW(i, sparkleColor.r, sparkleColor.g, sparkleColor.b, 0.04 + pulse * 0.96)
+            const progress = THREE.MathUtils.clamp((age - glint.start) / glint.duration, 0, 1)
+            const pulse = Math.sin(progress * Math.PI) ** 2
+            colors.setXYZW(i, sparkleColor.r, sparkleColor.g, sparkleColor.b, pulse)
           }
           colors.needsUpdate = true
         }

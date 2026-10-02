@@ -35,10 +35,10 @@ let seed = 7823
 const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296)
 const surfaces = { lunar: 0, sulfur: 0, rainbow: 0, null: 0 }
 for (let i = 0; i < 50000; i++) surfaces[rollMoonSurface(random)]++
-for (const [surface, probability] of Object.entries({ lunar: 0.125, sulfur: 0.125, rainbow: 0.05, null: 0.7 })) {
+for (const [surface, probability] of Object.entries({ lunar: 0.125, sulfur: 0.125, rainbow: 0.5, null: 0.25 })) {
   assert.ok(Math.abs(surfaces[surface] / 50000 - probability) < 0.008, `${surface} moon probability`)
 }
-for (const [roll, surface] of [[0, 'lunar'], [0.12499, 'lunar'], [0.125, 'sulfur'], [0.24999, 'sulfur'], [0.25, 'rainbow'], [0.29999, 'rainbow'], [0.3, null], [0.99999, null]]) {
+for (const [roll, surface] of [[0, 'lunar'], [0.12499, 'lunar'], [0.125, 'sulfur'], [0.24999, 'sulfur'], [0.25, 'rainbow'], [0.74999, 'rainbow'], [0.75, null], [0.99999, null]]) {
   assert.equal(rollMoonSurface(() => roll), surface)
 }
 const counts = [0, 0, 0, 0], ufos = [0, 0, 0, 0]
@@ -90,7 +90,9 @@ globalThis.document = { createElement: () => {
 } }
 const particleTexture = new THREE.Texture()
 for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow']]) {
-  const system = createPlanetCompanions({ radius: 3, planetStyle: {} }, particleTexture, { moonCount: 1, ufo: false }, () => roll)
+  let creating = true
+  const system = createPlanetCompanions({ radius: 3, planetStyle: {} }, particleTexture, { moonCount: 1, ufo: false }, () => creating ? roll : random())
+  creating = false
   const moon = system.moons[0], material = moon.mesh.material
   assert.equal(moon.surface, surface)
   if (surface === 'lunar') assert.ok(moon.mesh.geometry.userData.craters.length >= 20, 'Lunar moons need dense crater relief')
@@ -99,22 +101,50 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
   system.update(1, 1, false)
   const colorTime = material.userData.rainbowTime.value
   const sparkleColors = moon.sparkles?.geometry.attributes.color.array.slice()
+  const sparklePositions = moon.sparkles?.geometry.attributes.position.array.slice()
+  const glowTint = moon.glow?.material.uniforms.tint.value.clone()
   assert.equal(colorTime > 0, surface === 'rainbow', 'Only rainbow moons animate surface colors')
   system.update(10, 1, true)
   assert.equal(material.userData.rainbowTime.value, colorTime, 'Reduced motion freezes rainbow colors')
-  if (moon.sparkles) assert.deepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Reduced motion freezes twinkling')
+  if (moon.sparkles) {
+    assert.deepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Reduced motion freezes twinkling')
+    assert.deepEqual(moon.sparkles.geometry.attributes.position.array, sparklePositions, 'Reduced motion freezes sparkle locations')
+    assert.ok(moon.glow.material.uniforms.tint.value.equals(glowTint), 'Reduced motion freezes the glow color')
+  }
   system.update(1, 1, false)
   if (surface === 'rainbow') {
     assert.equal(material.userData.rainbowTime.value, 2, 'Color pulses advance with active animation time')
-    assert.equal(material.emissiveIntensity, 0.72, 'Rainbow moons retain their original brightness')
+    assert.ok(material.emissiveIntensity > 0.72 && material.emissiveIntensity < 1, 'Rainbow moons have a subtle emissive lift')
     assert.equal(material.color.r, 1.4)
     assert.notDeepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Surface glints should shimmer')
-    const alpha = moon.sparkles.geometry.attributes.color
-    assert.ok(Array.from({ length: alpha.count }, (_, i) => alpha.getW(i)).every(value => value >= 0.039 && value <= 1))
+    const { position: positions, color: colors } = moon.sparkles.geometry.attributes
+    const point = new THREE.Vector3()
+    let moves = 0, peak = 0
+    for (let frame = 0; frame < 120; frame++) {
+      const previous = positions.array.slice()
+      system.update(1 / 30, 1, false)
+      for (let i = 0; i < positions.count; i++) {
+        point.fromBufferAttribute(positions, i)
+        assert.ok(Math.abs(point.length() - moon.radius * 1.005) < 1e-6, 'Sparkles stay on the surface')
+        const alpha = colors.getW(i)
+        assert.ok(alpha >= 0 && alpha <= 1)
+        peak = Math.max(peak, alpha)
+        if (!point.equals(new THREE.Vector3().fromArray(previous, i * 3))) {
+          moves++
+          assert.equal(alpha, 0, 'Sparkles relocate only when fully faded out')
+        }
+      }
+    }
+    assert.ok(moves > positions.count && peak > 0.9, 'Sparkles must flash and repeatedly choose fresh locations')
     system.update(0, 0.5, false)
     assert.equal(moon.sparkles.material.opacity, moon.sparkles.material.userData.baseOpacity * 0.5, 'Sparkles fade with the moon')
+    assert.equal(moon.glow.material.uniforms.opacity.value, moon.glow.material.userData.baseOpacity * 0.5, 'Glow fades with the moon')
     moon.sparkles.geometry.dispose(); moon.sparkles.material.dispose()
-  } else assert.equal(moon.sparkles, null)
+    moon.glow.geometry.dispose(); moon.glow.material.dispose()
+  } else {
+    assert.equal(moon.sparkles, null)
+    assert.equal(moon.glow, null)
+  }
   assert.equal(material.map.version, version, 'Color shifts must not regenerate or upload textures')
   moon.mesh.geometry.dispose(); material.map.dispose(); material.dispose()
 }
@@ -135,16 +165,17 @@ for (const roll of [0.8, 0.1]) {
   assert.equal(system.group.visible, roll === 0.1)
   if (roll === 0.8) assert.equal(system.outerRadius, 3 * 1.1, 'Empty systems keep the original camera framing')
 }
+const orbitalSpeeds = []
 for (const rings of [false, true]) {
   for (const [count, roll] of [0.8, 0.1, 0.45, 0.6].entries()) {
     const rolls = [roll, 0.01]
     const system = createPlanetCompanions({ radius: 3, planetStyle: { rings } }, particleTexture, rollPlanetCompanions(() => rolls.shift()), random)
     assert.equal(system.config.moonCount, count)
     assert.equal(system.group.visible, false)
+    orbitalSpeeds.push(...system.moons.map(moon => moon.speed))
     if (count === 3) {
       const radii = system.moons.map(moon => moon.radius)
       assert.ok(Math.max(...radii) / Math.min(...radii) > 1.8, 'Moon sizes should vary visibly')
-      assert.ok(system.moons[0].speed > system.moons[2].speed, 'Outer moons should orbit more slowly')
       const ice = system.moons.find(moon => moon.surface === 'ice')
       if (ice) assert.equal(ice.mesh.geometry.userData.craters, undefined)
     }
@@ -196,5 +227,6 @@ for (const rings of [false, true]) {
     })
   }
 }
+assert.ok(Math.max(...orbitalSpeeds) / Math.min(...orbitalSpeeds) > 4, 'Moon speeds need a wide range from leisurely to quick')
 particleTexture.dispose()
 console.log('PASS: moon probabilities and variation, rocky-only craters, one or two UFOs per system, ring/moon clearance, moon visits, camera bounds, distance fades, continuous distant animation, fading trail, stable revisits and reduced motion.')
