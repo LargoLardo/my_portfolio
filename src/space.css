@@ -152,7 +152,7 @@
   scrollbar-width: thin; scrollbar-color: #667169 transparent;
 }
 .section-sidebar {
-  top: 80px; right: 36px; bottom: 86px; width: min(400px, calc(50% - 48px));
+  top: 80px; right: 36px; bottom: 86px; width: min(340px, 26vw);
   display: flex; flex-direction: column; padding: 24px;
   opacity: 0; pointer-events: none; transform: translateY(-8px);
   transition: opacity 220ms ease, transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1), top 220ms ease;
@@ -188,10 +188,10 @@
 .section-list strong { font-size: 14px; font-weight: 550; line-height: 1.35; }
 .section-list small { color: var(--suit-muted); font-size: 11px; line-height: 1.5; }
 
-.discovery-panel { top: 80px; left: 36px; bottom: 86px; width: min(480px, calc(50% - 48px)); padding: 36px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 140ms ease-out; transition: bottom 220ms ease; }
+.discovery-panel { top: 80px; left: 36px; bottom: 86px; width: min(360px, 28vw); padding: 28px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 140ms ease-out; transition: bottom 220ms ease; }
 .discovery-panel.is-closing { pointer-events: none; animation: panel-exit 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 .panel-close { position: absolute; top: 20px; right: 20px; }
-.panel-eyebrow { margin: 0 0 32px; padding-right: 24px; }
+.panel-eyebrow { margin: 0 0 28px; padding-right: 24px; }
 .panel-signal { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; color: var(--accent); font: 9px/1.7 var(--instrument-font); }
 .panel-signal span { flex-shrink: 0; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .discovery-panel h1 { margin: 0 0 12px; font-size: clamp(25px, 3vw, 34px); font-weight: 550; line-height: 1.12; letter-spacing: -0.045em; }
@@ -222,14 +222,29 @@
 @keyframes panel-enter { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes panel-exit { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-12px); } }
 
+/* Survey instruments leave a clear window onto the selected world. */
+.analysis-connector { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 11; pointer-events: none; overflow: visible; opacity: 0; transition: opacity 300ms ease; }
+.analysis-connector path { fill: none; stroke: currentColor; stroke-width: 1; }
+.analysis-connector circle { fill: #060b0e; stroke: currentColor; stroke-width: 1; }
+.planet-analysis { border-bottom: 1px solid var(--suit-line); padding-bottom: 22px; margin-bottom: 24px; }
+.planet-analysis > strong { display: block; font-size: 24px; font-weight: 450; letter-spacing: -0.03em; }
+.planet-analysis dl { display: grid; gap: 12px; margin: 22px 0 18px; font: 9px/1.5 var(--instrument-font); }
+.planet-analysis dl div { display: flex; justify-content: space-between; gap: 12px; }
+.planet-analysis dt { color: var(--suit-muted); }
+.planet-analysis dd { margin: 0; text-align: right; color: var(--accent); }
+.planet-analysis > p { margin: 0; color: var(--suit-muted); font-size: 10px; line-height: 1.7; }
+.scope-button:disabled { opacity: 0.55; }
+
 @media (max-width: 760px) {
   .section-sidebar, .discovery-panel { top: 72px; bottom: 78px; width: calc(100% - 32px); padding: 22px; }
   .section-sidebar { right: 16px; }
-  .discovery-panel { left: 16px; right: auto; }
-  .has-sidebar.has-discovery .discovery-panel { bottom: calc(48% + 8px); }
-  .has-sidebar.has-discovery .section-sidebar { top: calc(52% + 8px); }
+  .discovery-panel { top: 48%; left: 16px; right: auto; }
+  .has-sidebar.has-discovery .discovery-panel { top: 40%; bottom: calc(32% + 8px); }
+  .has-sidebar.has-discovery .section-sidebar { top: 68%; }
   .has-sidebar.has-discovery .section-intro { display: none; }
   .has-sidebar.has-discovery .section-list { margin-top: 16px; }
+  .has-sidebar.has-discovery .section-sidebar-header strong { font-size: 20px; }
+  .has-sidebar.has-discovery .section-sidebar-header span { display: none; }
 }
 
 @media (max-width: 560px) {

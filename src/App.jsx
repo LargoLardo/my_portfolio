@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
 import { makeDirtTexture, makePlanetTexture, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -478,7 +479,7 @@ function disposeScene(scene, renderer) {
   renderer.dispose()
 }
 
-function Panel({ discovery, closing, onClose, onExited }) {
+function Panel({ panelRef, phase, discovery, closing, onClose, onExited }) {
   const closeRef = useRef(null)
   useEffect(() => {
     if (!discovery) return undefined
@@ -493,14 +494,23 @@ function Panel({ discovery, closing, onClose, onExited }) {
   if (!discovery) return null
 
   return (
-    <aside className={`discovery-panel ${closing ? 'is-closing' : ''}`} aria-label={discovery.title} aria-hidden={closing} inert={closing} style={{ '--accent': discovery.color }} onAnimationEnd={(event) => {
+    <aside ref={panelRef} className={`discovery-panel ${closing ? 'is-closing' : ''}`} aria-label={discovery.title} aria-hidden={closing} inert={closing} style={{ '--accent': discovery.color }} onAnimationEnd={(event) => {
       if (event.animationName === 'panel-exit') onExited()
     }}>
       <button ref={closeRef} className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
         ×
       </button>
-      <p className="panel-eyebrow">FIELD NOTES / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
+      <p className="panel-eyebrow">ORBITAL ANALYSIS / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
       <p className="panel-signal"><span />{discovery.world} · {discovery.signal}</p>
+      <div className="planet-analysis">
+        <strong>{discovery.world}</strong>
+        <dl>
+          <div><dt>Survey</dt><dd role="status">{phase === 'orbit' ? 'Orbit established' : phase === 'returning' ? 'Leaving orbit' : 'Approaching'}</dd></div>
+          <div><dt>Surface</dt><dd>{discovery.planetStyle?.bands ? 'Banded atmosphere' : discovery.planetStyle?.cracked ? 'Fractured crust' : 'Rock & mineral'}</dd></div>
+          <div><dt>Rings</dt><dd>{discovery.planetStyle?.rings ? 'Dust & ice' : 'None detected'}</dd></div>
+        </dl>
+        <p>Drag or use arrow keys to orbit. Close to return.</p>
+      </div>
       <h1>{discovery.title}</h1>
       <p className="panel-subtitle">{discovery.subtitle}</p>
       <div className="panel-body">
@@ -586,7 +596,10 @@ export default function App() {
   const scopeActiveRef = useRef(false)
   const discoveredIdsRef = useRef(new Set())
   const discoveryEventsRef = useRef([])
-  const cameraTargetRef = useRef(null)
+  const orbitTargetRef = useRef(null)
+  const panelRef = useRef(null)
+  const connectorRef = useRef(null)
+  const [orbitPhase, setOrbitPhase] = useState('ground')
   const [scopeActiveState, setScopeActiveState] = useState(false)
   const scopeSignalRef = useRef(null)
   const progressCircleRef = useRef(null)
@@ -646,17 +659,14 @@ export default function App() {
     markDiscovered(id)
     setDiscoveryClosing(false)
     setActiveDiscovery(id)
-  }, [markDiscovered])
+    orbitTargetRef.current = id
+    setScopeActive(false)
+  }, [markDiscovered, setScopeActive])
 
-  const closeDiscovery = useCallback(() => setDiscoveryClosing(true), [])
-
-  const selectDiscovery = useCallback(
-    (id) => {
-      cameraTargetRef.current = id
-      revealDiscovery(id)
-    },
-    [revealDiscovery],
-  )
+  const closeDiscovery = useCallback(() => {
+    orbitTargetRef.current = null
+    setDiscoveryClosing(true)
+  }, [])
 
   useEffect(() => {
     if (signPanelOpen) helpCloseRef.current?.focus({ preventScroll: true })
@@ -698,8 +708,9 @@ export default function App() {
     scene.background = new THREE.Color(0x000102)
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
 
-    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 360)
+    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
+    const orbit = createPlanetOrbit(camera, setOrbitPhase)
 
     const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
     scene.add(ambient)
@@ -828,15 +839,15 @@ export default function App() {
     scene.add(grass)
 
     const starGeometry = new THREE.BufferGeometry()
-    const starCount = 2100
-    const starRadiusConst = 70
+    const starCount = 4200
+    const starRadiusConst = 1200
     const starPositions = new Float32Array(starCount * 3)
     const starColors = new Float32Array(starCount * 3)
     const starRand = seededRandom(612)
 
     for (let i = 0; i < starCount; i += 1) {
       const theta = starRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(0.015, 0.985, starRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.985, 0.985, starRand()))
       const radius = starRadiusConst + starRand() * starRadiusConst / 2
       const y = Math.cos(phi) * radius
       const x = Math.sin(phi) * Math.cos(theta) * radius
@@ -845,7 +856,7 @@ export default function App() {
       const cold = starRand() > 0.28
 
       starPositions[i * 3] = x
-      starPositions[i * 3 + 1] = Math.abs(y) + 2
+      starPositions[i * 3 + 1] = y
       starPositions[i * 3 + 2] = z
       starColors[i * 3] = cold ? brightness * 0.9 : brightness * 1.25
       starColors[i * 3 + 1] = brightness
@@ -857,7 +868,7 @@ export default function App() {
     const stars = new THREE.Points(
       starGeometry,
       new THREE.PointsMaterial({
-        size: 0.44,
+        size: 7.5,
         map: particleTexture,
         vertexColors: true,
         transparent: true,
@@ -870,8 +881,8 @@ export default function App() {
     )
     scene.add(stars)
 
-    const anchorStarCount = 210
-    const anchorStarRadiusConst = 100
+    const anchorStarCount = 420
+    const anchorStarRadiusConst = 1500
     const anchorStarGeometry = new THREE.BufferGeometry()
     const anchorStarPositions = new Float32Array(anchorStarCount * 3)
     const anchorStarColors = new Float32Array(anchorStarCount * 3)
@@ -879,13 +890,13 @@ export default function App() {
 
     for (let i = 0; i < anchorStarCount; i += 1) {
       const theta = anchorRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(0.08, 0.98, anchorRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.98, 0.98, anchorRand()))
       const radius = anchorStarRadiusConst + anchorRand() * anchorStarRadiusConst / 2
       const y = Math.cos(phi) * radius
       const twinkle = 1.6 + anchorRand() * 1.2
 
       anchorStarPositions[i * 3] = Math.sin(phi) * Math.cos(theta) * radius
-      anchorStarPositions[i * 3 + 1] = Math.abs(y) + 4
+      anchorStarPositions[i * 3 + 1] = y
       anchorStarPositions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * radius
       anchorStarColors[i * 3] = twinkle
       anchorStarColors[i * 3 + 1] = twinkle * (0.9 + anchorRand() * 0.25)
@@ -897,7 +908,7 @@ export default function App() {
     const anchorStars = new THREE.Points(
       anchorStarGeometry,
       new THREE.PointsMaterial({
-        size: 1.08,
+        size: 16.2,
         map: particleTexture,
         vertexColors: true,
         transparent: true,
@@ -1436,6 +1447,9 @@ export default function App() {
       burstParticles.material.opacity = 1
     }
 
+    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
+    const frameOffset = new THREE.Vector2()
+    const projected = new THREE.Vector3()
     const raycaster = new THREE.Raycaster()
     const center = new THREE.Vector2(0, 0)
     const pointerNdc = new THREE.Vector2()
@@ -1461,7 +1475,6 @@ export default function App() {
     let pitch = -0.1
     let viewYaw = yaw
     let viewPitch = pitch
-    let cameraPanTarget = null
     let localFocus = null
     let scopeHoldTarget = null
     let scopeHoldElapsed = 0
@@ -1572,7 +1585,7 @@ export default function App() {
     }
 
     const isInteractionBoxAtPointer = (event, interactionMesh, maxDistance) => {
-      if (scopeActiveRef.current) return false
+      if (scopeActiveRef.current || orbit.active || orbitTargetRef.current) return false
 
       interactionMesh.updateWorldMatrix(true, false)
       interactionMesh.getWorldPosition(interactionCenter)
@@ -1627,7 +1640,7 @@ export default function App() {
 
     const onPointerDown = (event) => {
       if (event.button !== 0 && event.button !== 2) return
-      if (event.button === 2) setScopeActive(true)
+      if (event.button === 2 && !orbit.active && !orbitTargetRef.current) setScopeActive(true)
 
       mount.focus({ preventScroll: true })
       drag.active = true
@@ -1635,7 +1648,6 @@ export default function App() {
       drag.x = event.clientX
       drag.y = event.clientY
       drag.moved = 0
-      cameraPanTarget = null
       mount.setPointerCapture(event.pointerId)
     }
 
@@ -1648,6 +1660,10 @@ export default function App() {
       drag.y = event.clientY
       drag.moved += Math.abs(dx) + Math.abs(dy)
 
+      if (orbit.active || orbitTargetRef.current) {
+        orbit.drag(dx, dy)
+        return
+      }
       const sensitivity = scopeActiveRef.current ? 0.0014 : 0.003
       yaw -= dx * sensitivity
       pitch = THREE.MathUtils.clamp(pitch - dy * sensitivity, -0.65, 1.18)
@@ -1663,7 +1679,7 @@ export default function App() {
 
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
-      if (event.button === 0 && drag.moved < 7) {
+      if (!orbit.active && !orbitTargetRef.current && event.button === 0 && drag.moved < 7) {
         if (!tryOpenSignPanel(event) && !trySkipRecord(event)) {
           openFocusedPlanet(event)
         }
@@ -1692,6 +1708,14 @@ export default function App() {
         return
       }
       if (event.target.closest('button, a, aside')) return
+      if (orbit.active || orbitTargetRef.current) {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault()
+        if (event.code === 'ArrowLeft') orbit.drag(-30, 0)
+        if (event.code === 'ArrowRight') orbit.drag(30, 0)
+        if (event.code === 'ArrowUp') orbit.drag(0, -30)
+        if (event.code === 'ArrowDown') orbit.drag(0, 30)
+        return
+      }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
       if (event.code === 'Space') {
         event.preventDefault()
@@ -1815,58 +1839,85 @@ export default function App() {
       sparkGeometry.attributes.position.needsUpdate = true
       sparkGeometry.attributes.color.needsUpdate = true
 
-      const requestedTargetId = cameraTargetRef.current
-      if (requestedTargetId) {
-        cameraTargetRef.current = null
-        const planetIndex = DISCOVERIES.findIndex((discovery) => discovery.id === requestedTargetId)
-        if (planetIndex >= 0) {
-          targetDirection.copy(planetMeshes[planetIndex].position).sub(camera.position).normalize()
-          cameraPanTarget = {
-            yaw: Math.atan2(-targetDirection.x, -targetDirection.z),
-            pitch: THREE.MathUtils.clamp(Math.asin(targetDirection.y), -0.65, 1.18),
-          }
+      const orbitPlanet = planetMeshes.find(planet => planet.userData.discoveryId === orbitTargetRef.current) ?? null
+      const panelBounds = panelRef.current?.getBoundingClientRect()
+      const log = mount.parentElement.querySelector('.section-sidebar.is-open')
+      const logBounds = log?.getBoundingClientRect()
+      const width = mount.clientWidth, height = mount.clientHeight
+      const mobile = width <= 760
+      // Frame the actual free sky between instruments, including when the log opens.
+      const left = !mobile && panelBounds ? panelBounds.right + 30 : 20
+      const rightEdge = !mobile && logBounds ? logBounds.left - 30 : width - 20
+      const top = 76
+      const bottom = mobile && panelBounds ? panelBounds.top - 24 : height - 70
+      const centerX = (left + rightEdge) / 2, centerY = (top + bottom) / 2
+      const diameter = Math.max(80, Math.min(rightEdge - left, bottom - top) * 0.72)
+      const discovery = orbitPlanet && DISCOVERY_BY_ID[orbitPlanet.userData.discoveryId]
+      const outerRadius = discovery ? discovery.radius * (discovery.planetStyle?.rings ? 2.2 : 1.1) : 1
+      const angularRadius = Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * diameter / height)
+      const orbitDistance = outerRadius / Math.sin(angularRadius)
+      if (orbit.active || orbitPlanet) {
+        pressed.clear()
+        velocity.set(0, 0, 0)
+        // Freeze the ground look controls at the saved view, not their damped target.
+        yaw = viewYaw
+        pitch = viewPitch
+      } else {
+        const lookEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 22)
+        viewYaw += shortestAngleDelta(viewYaw, yaw) * lookEase
+        viewPitch = THREE.MathUtils.lerp(viewPitch, pitch, lookEase)
+        camera.quaternion.setFromEuler(viewEuler.set(viewPitch, viewYaw, 0))
+        forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+        forward.y = 0
+        forward.normalize()
+        right.crossVectors(forward, UP).normalize()
+        desiredVelocity.set(0, 0, 0)
+
+        if (pressed.has('KeyW') || pressed.has('ArrowUp')) desiredVelocity.add(forward)
+        if (pressed.has('KeyS') || pressed.has('ArrowDown')) desiredVelocity.sub(forward)
+        if (pressed.has('KeyD') || pressed.has('ArrowRight')) desiredVelocity.add(right)
+        if (pressed.has('KeyA') || pressed.has('ArrowLeft')) desiredVelocity.sub(right)
+
+        desiredVelocity.normalize().multiplyScalar(scopeActiveRef.current ? 1.05 : 1.85)
+        velocity.lerp(desiredVelocity, 1 - Math.exp(-dt * 12))
+        if (velocity.lengthSq() > 0.00001) {
+          camera.position.addScaledVector(velocity, dt)
+          clampPlayer()
         }
       }
-
-      if (cameraPanTarget) {
-        const panEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 2.8)
-        const yawDelta = shortestAngleDelta(yaw, cameraPanTarget.yaw)
-        yaw += yawDelta * panEase
-        pitch = THREE.MathUtils.lerp(pitch, cameraPanTarget.pitch, panEase)
-
-        if (Math.abs(yawDelta) < 0.004 && Math.abs(pitch - cameraPanTarget.pitch) < 0.004) {
-          yaw = cameraPanTarget.yaw
-          pitch = cameraPanTarget.pitch
-          cameraPanTarget = null
-        }
-      }
-
-      const lookEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 22)
-      viewYaw += shortestAngleDelta(viewYaw, yaw) * lookEase
-      viewPitch = THREE.MathUtils.lerp(viewPitch, pitch, lookEase)
-      camera.quaternion.setFromEuler(viewEuler.set(viewPitch, viewYaw, 0))
-      forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
-      forward.y = 0
-      forward.normalize()
-      right.crossVectors(forward, UP).normalize()
-      desiredVelocity.set(0, 0, 0)
-
-      if (pressed.has('KeyW') || pressed.has('ArrowUp')) desiredVelocity.add(forward)
-      if (pressed.has('KeyS') || pressed.has('ArrowDown')) desiredVelocity.sub(forward)
-      if (pressed.has('KeyD') || pressed.has('ArrowRight')) desiredVelocity.add(right)
-      if (pressed.has('KeyA') || pressed.has('ArrowLeft')) desiredVelocity.sub(right)
-
-      desiredVelocity.normalize().multiplyScalar(scopeActiveRef.current ? 1.05 : 1.85)
-      velocity.lerp(desiredVelocity, 1 - Math.exp(-dt * 12))
-      if (velocity.lengthSq() > 0.00001) {
-        camera.position.addScaledVector(velocity, dt)
-        clampPlayer()
-      }
+      orbit.update(orbitPlanet, orbitDistance, dt, reducedMotion)
+      const campVisible = !orbit.active || orbit.distanceFromCamp < 27
+      campObjects.forEach(object => { object.visible = campVisible })
 
       // Preserve enough horizontal view to include the camp and planets in portrait.
       const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 18))
-      camera.updateProjectionMatrix()
+      camera.fov = THREE.MathUtils.lerp(camera.fov, orbitPlanet ? 48 : scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 18))
+      const frameEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 5)
+      frameOffset.x = THREE.MathUtils.lerp(frameOffset.x, orbitPlanet ? width / 2 - centerX : 0, frameEase)
+      frameOffset.y = THREE.MathUtils.lerp(frameOffset.y, orbitPlanet ? height / 2 - centerY : 0, frameEase)
+      camera.setViewOffset(width, height, frameOffset.x, frameOffset.y, width, height)
+      camera.updateMatrixWorld()
+      const connector = connectorRef.current
+      if (connector) {
+        const visible = orbit.phase === 'orbit' && orbitPlanet && panelBounds
+        connector.style.opacity = visible ? '0.65' : '0'
+        if (visible) {
+          projected.copy(orbitPlanet.position).project(camera)
+          const x = (projected.x + 1) * width / 2, y = (1 - projected.y) * height / 2
+          const distance = camera.position.distanceTo(orbitPlanet.position)
+          const radius = discovery.radius / Math.sqrt(distance * distance - discovery.radius ** 2) * height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))
+          const startX = mobile ? panelBounds.left + panelBounds.width / 2 : panelBounds.right
+          const startY = mobile ? panelBounds.top : panelBounds.top + Math.min(160, panelBounds.height / 2)
+          const endX = mobile ? x : x - radius - 8
+          const endY = mobile ? y + radius + 8 : y
+          connector.querySelector('path').setAttribute('d', mobile
+            ? `M${startX},${startY} L${startX},${endY + 16} L${endX},${endY}`
+            : `M${startX},${startY} L${endX - 24},${startY} L${endX},${endY}`)
+          const dot = connector.querySelector('circle')
+          dot.setAttribute('cx', endX)
+          dot.setAttribute('cy', endY)
+        }
+      }
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
@@ -1948,6 +1999,7 @@ export default function App() {
         scopeSignalRef.current.style.opacity = String(0.28 + displayedProximity * 0.72)
       }
       if (progressCircleRef.current) progressCircleRef.current.style.opacity = displayedProximity === 1 ? '1' : '0'
+      if (orbit.active) focusedId = null
       setFocus(focusedId)
       updateScopeAutoOpen(displayedProximity === 1 ? focusedId : null, dt)
 
@@ -2019,6 +2071,7 @@ export default function App() {
 
   return (
     <main
+      data-camera-mode={orbitPhase}
       className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${completedDiscovery ? 'scan-complete' : ''} ${
         ignited ? 'is-lit' : ''
       } ${sceneReady ? 'is-ready' : ''} ${sidebarOpen ? 'has-sidebar' : ''} ${activeDiscovery ? 'has-discovery' : ''}`}
@@ -2064,9 +2117,10 @@ export default function App() {
           className="scope-button"
           type="button"
           aria-pressed={scopeActiveState}
-          onClick={() => setScopeActive(!scopeActiveState)}
+          disabled={orbitPhase === 'returning'}
+          onClick={() => orbitTargetRef.current ? closeDiscovery() : setScopeActive(!scopeActiveState)}
         >
-          <span className="scope-icon" aria-hidden="true" /> Signalscope
+          <span className="scope-icon" aria-hidden="true" /> {orbitPhase === 'returning' ? 'Returning…' : activeDiscovery ? 'Return to camp' : 'Signalscope'}
         </button>
       </nav>
 
@@ -2113,7 +2167,7 @@ export default function App() {
         activeId={activeDiscovery}
         discoveredIds={discoveredIds}
         portraits={planetPortraits}
-        onSelect={selectDiscovery}
+        onSelect={revealDiscovery}
         onClose={() => {
           setSidebarOpen(false)
           directoryButtonRef.current?.focus({ preventScroll: true })
@@ -2127,7 +2181,8 @@ export default function App() {
           <a href="/">Back to portfolio ↗</a>
         </div>
       </PortfolioSidebar>
-      <Panel discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
+      <svg ref={connectorRef} className="analysis-connector" aria-hidden="true" style={{ color: activeData?.color }}><path /><circle r="3" /></svg>
+      <Panel panelRef={panelRef} phase={orbitPhase} discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
         setActiveDiscovery(null)
         setDiscoveryClosing(false)
       }} />
