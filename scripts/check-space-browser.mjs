@@ -38,10 +38,22 @@ const click = selector => evaluate(`document.querySelector(${JSON.stringify(sele
 const progress = () => evaluate("1 - Number(document.querySelector('.scope-progress').style.strokeDashoffset)")
 const gap = () => evaluate("parseFloat(document.querySelector('.scope-signal').style.getPropertyValue('--signal-gap'))")
 const mouse = (type, x, y, button = 'right', buttons = 2) => send('Input.dispatchMouseEvent', { type, x, y, button, buttons, clickCount: 1 })
+let audioProbeId
 try {
   await send('Runtime.enable')
   await send('Log.enable')
   await send('Page.enable')
+  const probe = await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.__spaceAudio = [];
+    window.Audio = new Proxy(window.Audio, {
+      construct(Target, args) {
+        const audio = new Target(...args);
+        window.__spaceAudio.push(audio);
+        return audio;
+      }
+    });
+  ` })
+  audioProbeId = probe.identifier
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
   const loaded = new Promise(resolve => {
     const onLoad = ({ data }) => {
@@ -157,6 +169,40 @@ try {
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   assert.equal(await evaluate('document.documentElement.scrollWidth'), 390)
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 8)
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  await waitFor("window.__spaceAudio.at(-1)?.paused === false")
+  const campVolume = await evaluate("window.__spaceAudio.at(-1).volume")
+  assert.ok(campVolume > 0.02, 'Music should be audible at camp')
+  await evaluate("document.querySelector('.section-list button').click()")
+  await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
+  await pause(1200)
+  assert.ok(Math.abs(await evaluate("window.__spaceAudio.at(-1).volume") - campVolume) < 0.005, 'Exploring a planet must preserve the camp listening volume')
+  assert.equal(await evaluate("!!document.querySelector('.planet-analysis')"), false)
+  await waitFor("Number(document.querySelector('.analysis-connector').style.opacity) > 0.6")
+  const anchorPosition = () => evaluate("(()=>{const dot=document.querySelector('.analysis-connector circle');return [+dot.getAttribute('cx'),+dot.getAttribute('cy')]})()")
+  const anchorBefore = await anchorPosition()
+  await pause(500)
+  const anchorAfter = await anchorPosition()
+  assert.ok(Math.hypot(anchorAfter[0] - anchorBefore[0], anchorAfter[1] - anchorBefore[1]) > 0.1, 'The marker must follow the rotating surface instead of staying at a fixed screen location')
+  await mouse('mousePressed', 650, 430, 'left', 1)
+  await mouse('mouseMoved', 1435, 430, 'left', 1)
+  await mouse('mouseReleased', 1435, 430, 'left', 0)
+  await waitFor("Number(document.querySelector('.analysis-connector').style.opacity) === 0")
+  await mouse('mousePressed', 1000, 430, 'left', 1)
+  await mouse('mouseMoved', 215, 430, 'left', 1)
+  await mouse('mouseReleased', 215, 430, 'left', 0)
+  await waitFor("Number(document.querySelector('.analysis-connector').style.opacity) > 0.6")
+  await evaluate("document.querySelectorAll('.section-list button')[1].click()")
+  await pause(100)
+  await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
+  await pause(800)
+  assert.ok(Math.abs(await evaluate("window.__spaceAudio.at(-1).volume") - campVolume) < 0.005, 'Planet transfers must also preserve the camp volume')
+  await click('.mute-button')
+  await waitFor("window.__spaceAudio.at(-1).muted")
+  await click('.mute-button')
+  await waitFor("!window.__spaceAudio.at(-1).muted")
+  await click('.panel-close')
+  await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await evaluate("document.querySelector('.section-list button').click()")
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
@@ -164,8 +210,9 @@ try {
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   await waitFor("!document.querySelector('.discovery-panel')")
   assert.deepEqual(errors, [])
-  console.log('PASS: approaching/merging signal arcs, scan progress and completion, scope aiming and Space release after discovery, mute, smooth/cancellable menu exits, Escape, all destinations, orbital flight and return, analysis connector, simultaneous desktop/mobile panels.')
+  console.log('PASS: approaching/merging signal arcs, scan progress and completion, scope aiming and Space release after discovery, mute, smooth/cancellable menu exits, Escape, all destinations, orbital flight and return, camp music volume during orbit/transfers, rotating surface connector and occlusion, simultaneous desktop/mobile panels.')
 } finally {
+  if (audioProbeId) await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: audioProbeId })
   await send('Emulation.setEmulatedMedia', { features: [] })
   await send('Emulation.clearDeviceMetricsOverride')
   socket.close()

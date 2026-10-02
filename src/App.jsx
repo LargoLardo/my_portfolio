@@ -479,7 +479,7 @@ function disposeScene(scene, renderer) {
   renderer.dispose()
 }
 
-function Panel({ panelRef, phase, discovery, closing, onClose, onExited }) {
+function Panel({ panelRef, discovery, closing, onClose, onExited }) {
   const closeRef = useRef(null)
   useEffect(() => {
     if (!discovery) return undefined
@@ -500,17 +500,8 @@ function Panel({ panelRef, phase, discovery, closing, onClose, onExited }) {
       <button ref={closeRef} className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
         ×
       </button>
-      <p className="panel-eyebrow">ORBITAL ANALYSIS / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
+      <p className="panel-eyebrow">FIELD NOTES / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
       <p className="panel-signal"><span />{discovery.world} · {discovery.signal}</p>
-      <div className="planet-analysis">
-        <strong>{discovery.world}</strong>
-        <dl>
-          <div><dt>Survey</dt><dd role="status">{phase === 'orbit' ? 'Orbit established' : phase === 'returning' ? 'Leaving orbit' : 'Approaching'}</dd></div>
-          <div><dt>Surface</dt><dd>{discovery.planetStyle?.bands ? 'Banded atmosphere' : discovery.planetStyle?.cracked ? 'Fractured crust' : 'Rock & mineral'}</dd></div>
-          <div><dt>Rings</dt><dd>{discovery.planetStyle?.rings ? 'Dust & ice' : 'None detected'}</dd></div>
-        </dl>
-        <p>Drag or use arrow keys to orbit. Close to return.</p>
-      </div>
       <h1>{discovery.title}</h1>
       <p className="panel-subtitle">{discovery.subtitle}</p>
       <div className="panel-body">
@@ -1150,6 +1141,7 @@ export default function App() {
     let recordObjectUrl = null
     let recordMaxVolume = DEFAULT_RECORD_TRACKS[0].volume ?? 0.28
     let recordFadeElapsed = 0
+    let recordListeningDistance = camera.position.distanceTo(recordPlayer.position)
     let audioCancelled = false
     let audioUnlockRegistered = false
     const playRecordAudio = () => {
@@ -1444,6 +1436,8 @@ export default function App() {
     const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
+    const anchorNormal = new THREE.Vector3()
+    const anchorView = new THREE.Vector3()
     const raycaster = new THREE.Raycaster()
     const center = new THREE.Vector2(0, 0)
     const pointerNdc = new THREE.Vector2()
@@ -1796,9 +1790,10 @@ export default function App() {
         recordDisc.rotation.y += dt * 2.85
       }
 
+      // Keep the departure listening distance through flights, orbits and transfers.
+      if (!orbit.active) recordListeningDistance = camera.position.distanceTo(recordPlayer.position)
       if (recordAudio) {
         recordAudio.muted = audioMutedRef.current
-        const recordDistance = camera.position.distanceTo(recordPlayer.position)
         if (!recordAudio.paused) {
           recordFadeElapsed = Math.min(MUSIC_FADE_SECONDS, recordFadeElapsed + dt)
         }
@@ -1806,7 +1801,7 @@ export default function App() {
         const recordVolumeTarget =
           (audioMutedRef.current ? 0 : recordMaxVolume) *
           fadeAmount *
-          THREE.MathUtils.clamp(1 - (recordDistance - 1) / 8, 0.1, 1)
+          THREE.MathUtils.clamp(1 - (recordListeningDistance - 1) / 8, 0.1, 1)
         recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 1 - Math.exp(-dt * 3.4))
       }
 
@@ -1900,30 +1895,6 @@ export default function App() {
       frameOffset.y = THREE.MathUtils.lerp(frameOffset.y, orbitPlanet ? height / 2 - centerY : 0, frameEase)
       camera.setViewOffset(width, height, frameOffset.x, frameOffset.y, width, height)
       camera.updateMatrixWorld()
-      const connector = connectorRef.current
-      if (connector) {
-        const visible = orbit.phase === 'orbit' && orbitPlanet && panelBounds
-        connector.style.opacity = visible ? '0.65' : '0'
-        if (visible) {
-          // Project a point on the visible hemisphere so the marker rests on
-          // the actual globe, including its scale, rather than outside its rim.
-          projected.set(mobile ? 0 : -0.82, mobile ? -0.82 : 0, Math.sqrt(1 - 0.82 ** 2))
-            .applyQuaternion(camera.quaternion)
-            .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
-            .add(orbitPlanet.position)
-            .project(camera)
-          const startX = mobile ? panelBounds.left + panelBounds.width / 2 : panelBounds.right
-          const startY = mobile ? panelBounds.top : panelBounds.top + Math.min(160, panelBounds.height / 2)
-          const endX = (projected.x + 1) * width / 2
-          const endY = (1 - projected.y) * height / 2
-          connector.querySelector('path').setAttribute('d', mobile
-            ? `M${startX},${startY} L${startX},${endY + 16} L${endX},${endY}`
-            : `M${startX},${startY} L${endX - 24},${startY} L${endX},${endY}`)
-          const dot = connector.querySelector('circle')
-          dot.setAttribute('cx', endX)
-          dot.setAttribute('cy', endY)
-        }
-      }
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
@@ -2042,6 +2013,41 @@ export default function App() {
           decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, inspecting ? 0.92 : scopeAmount ? 0.8 : planet.userData.discovered ? 0.42 : 0.28, blend)
         }
       })
+
+      const connector = connectorRef.current
+      if (connector) {
+        const visible = orbit.phase === 'orbit' && orbitPlanet && panelBounds
+        connector.style.opacity = visible ? '0.65' : '0'
+        if (visible) {
+          if (!orbitPlanet.userData.menuAnchor) {
+            // Choose a visible location once, then store it in the globe's local
+            // coordinates so it follows the same terrain as the planet rotates.
+            const angle = Math.random() * Math.PI * 2
+            const radius = 0.35 + Math.random() * 0.4
+            projected.set(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.sqrt(1 - radius ** 2))
+              .applyQuaternion(camera.quaternion)
+              .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
+              .add(orbitPlanet.position)
+            orbitPlanet.userData.menuAnchor = orbitPlanet.worldToLocal(projected.clone())
+          }
+          orbitPlanet.localToWorld(projected.copy(orbitPlanet.userData.menuAnchor))
+          anchorNormal.copy(projected).sub(orbitPlanet.position).normalize()
+          anchorView.copy(camera.position).sub(projected).normalize()
+          // Fade behind the horizon instead of attaching to a different location.
+          connector.style.opacity = String(0.65 * smoothstep(0, 0.16, anchorNormal.dot(anchorView)))
+          projected.project(camera)
+          const startX = mobile ? panelBounds.left + panelBounds.width / 2 : panelBounds.right
+          const startY = mobile ? panelBounds.top : panelBounds.top + Math.min(160, panelBounds.height / 2)
+          const endX = (projected.x + 1) * width / 2
+          const endY = (1 - projected.y) * height / 2
+          connector.querySelector('path').setAttribute('d', mobile
+            ? `M${startX},${startY} L${startX},${endY + 16} L${endX},${endY}`
+            : `M${startX},${startY} L${endX - 24},${startY} L${endX},${endY}`)
+          const dot = connector.querySelector('circle')
+          dot.setAttribute('cx', endX)
+          dot.setAttribute('cy', endY)
+        }
+      }
 
       renderer.render(scene, camera)
 
@@ -2200,7 +2206,7 @@ export default function App() {
         </div>
       </PortfolioSidebar>
       <svg ref={connectorRef} className="analysis-connector" aria-hidden="true" style={{ color: activeData?.color }}><path /><circle r="3" /></svg>
-      <Panel panelRef={panelRef} phase={orbitPhase} discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
+      <Panel panelRef={panelRef} discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
         setActiveDiscovery(null)
         setDiscoveryClosing(false)
       }} />
