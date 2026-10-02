@@ -1452,6 +1452,7 @@ export default function App() {
     const planetTint = new THREE.Color()
     const interactionCenter = new THREE.Vector3()
     const pressed = new Set()
+    let scopeKeyHeld = false
     const velocity = new THREE.Vector3()
     const desiredVelocity = new THREE.Vector3()
     const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ')
@@ -1689,6 +1690,11 @@ export default function App() {
     const onContextMenu = (event) => event.preventDefault()
 
     const onKeyDown = (event) => {
+      // Discovery moves focus to Close; keep the held scan key from activating it.
+      if (event.code === 'Space' && scopeKeyHeld) {
+        event.preventDefault()
+        return
+      }
       if (mount.inert) return
       if (event.repeat) return
       if (event.code === 'Escape') {
@@ -1713,6 +1719,7 @@ export default function App() {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
       if (event.code === 'Space') {
         event.preventDefault()
+        scopeKeyHeld = true
         setScopeActive(true)
       }
       pressed.add(event.code)
@@ -1725,14 +1732,16 @@ export default function App() {
     }
 
     const onKeyUp = (event) => {
-      if (event.code === 'Space' && pressed.has('Space')) {
+      if (event.code === 'Space' && scopeKeyHeld) {
         event.preventDefault()
+        scopeKeyHeld = false
         setScopeActive(false)
       }
       pressed.delete(event.code)
     }
 
     const onBlur = () => {
+      scopeKeyHeld = false
       setCompletedDiscovery(null)
       pressed.clear()
       velocity.set(0, 0, 0)
