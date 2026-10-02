@@ -7,6 +7,7 @@ export function createPlanetOrbit(camera, onPhaseChange, planets) {
   let target = null
   let age = 0
   let azimuth = 0, elevation = 0, viewAzimuth = 0, viewElevation = 0, distance = 12
+  let zoomScale = 1, framingDistance = 12
   const homePosition = new THREE.Vector3()
   const homeRotation = new THREE.Quaternion()
   const startRotation = new THREE.Quaternion()
@@ -39,7 +40,14 @@ export function createPlanetOrbit(camera, onPhaseChange, planets) {
       azimuth -= dx * 0.004
       elevation = THREE.MathUtils.clamp(elevation + dy * 0.003, -0.75, 0.75)
     },
+    zoom(factor) {
+      if (phase !== 'orbit' || !Number.isFinite(factor) || factor <= 0) return
+      // Stay outside the complete planet system, including rings and moons.
+      const minimum = target.userData.orbitRadius * 1.2 / framingDistance
+      zoomScale = THREE.MathUtils.clamp(zoomScale * factor, minimum, 2)
+    },
     update(nextTarget, desiredDistance, dt, reducedMotion) {
+      framingDistance = desiredDistance
       if (nextTarget !== target) {
         if (phase === 'ground') {
           homePosition.copy(camera.position)
@@ -47,6 +55,7 @@ export function createPlanetOrbit(camera, onPhaseChange, planets) {
         }
         const previousTarget = target
         target = nextTarget
+        zoomScale = 1
         path.v0.copy(camera.position)
         startRotation.copy(camera.quaternion)
         age = 0
@@ -86,7 +95,8 @@ export function createPlanetOrbit(camera, onPhaseChange, planets) {
         }
       }
       if (phase === 'ground') return
-      distance = THREE.MathUtils.damp(distance, desiredDistance, 5, dt)
+      const zoomDistance = target ? Math.max(target.userData.orbitRadius * 1.2, desiredDistance * zoomScale) : desiredDistance
+      distance = reducedMotion ? zoomDistance : THREE.MathUtils.damp(distance, zoomDistance, phase === 'orbit' ? 12 : 5, dt)
       if (phase === 'approach' || phase === 'returning') {
         age += dt
         const t = reducedMotion ? 1 : Math.min(1, age)

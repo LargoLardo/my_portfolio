@@ -1494,6 +1494,12 @@ export default function App() {
       y: 0,
       moved: 0,
     }
+    const touchPoints = new Map()
+    let pinchDistance = 0, gestureScale = null
+    const touchDistance = () => {
+      const [a, b] = touchPoints.values()
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+    }
 
     let yaw = 0
     let pitch = -0.1
@@ -1667,15 +1673,33 @@ export default function App() {
       if (event.button === 2 && !orbit.active && !orbitTargetRef.current) setScopeActive(true)
 
       mount.focus({ preventScroll: true })
+      mount.setPointerCapture(event.pointerId)
+      if (event.pointerType === 'touch') {
+        touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        if (touchPoints.size > 1) {
+          pinchDistance = touchDistance()
+          drag.active = false
+          drag.pointerId = null
+          return
+        }
+      }
       drag.active = true
       drag.pointerId = event.pointerId
       drag.x = event.clientX
       drag.y = event.clientY
       drag.moved = 0
-      mount.setPointerCapture(event.pointerId)
     }
 
     const onPointerMove = (event) => {
+      if (touchPoints.has(event.pointerId)) {
+        touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        if (touchPoints.size > 1) {
+          const nextDistance = touchDistance()
+          if (pinchDistance > 0 && nextDistance > 0) orbit.zoom(pinchDistance / nextDistance)
+          pinchDistance = nextDistance
+          return
+        }
+      }
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
       const dx = event.clientX - drag.x
@@ -1700,6 +1724,17 @@ export default function App() {
 
     const onPointerUp = (event) => {
       if (event.button === 2) setScopeActive(false)
+      if (mount.hasPointerCapture(event.pointerId)) mount.releasePointerCapture(event.pointerId)
+      if (touchPoints.delete(event.pointerId) && touchPoints.size) {
+        pinchDistance = touchDistance()
+        const [pointerId, point] = touchPoints.entries().next().value
+        drag.active = touchPoints.size === 1
+        drag.pointerId = pointerId
+        drag.x = point.x
+        drag.y = point.y
+        drag.moved = Infinity // Lifting a finger after a pinch must not trigger a tap.
+        return
+      }
 
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
@@ -1711,12 +1746,34 @@ export default function App() {
 
       drag.active = false
       drag.pointerId = null
-      if (mount.hasPointerCapture(event.pointerId)) {
-        mount.releasePointerCapture(event.pointerId)
-      }
+      pinchDistance = 0
     }
 
     const onContextMenu = (event) => event.preventDefault()
+    const onWheel = (event) => {
+      if (!orbit.active) return
+      event.preventDefault()
+      if (gestureScale !== null) return
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? mount.clientHeight : 1
+      const delta = event.deltaY * unit * (event.ctrlKey ? 0.01 : 0.0015)
+      orbit.zoom(Math.exp(THREE.MathUtils.clamp(delta, -1, 1)))
+    }
+    // Safari trackpads emit gesture events instead of Ctrl+wheel pinch events.
+    const onGestureStart = (event) => {
+      if (!orbit.active) return
+      event.preventDefault()
+      gestureScale = event.scale
+    }
+    const onGestureChange = (event) => {
+      if (gestureScale === null) return
+      event.preventDefault()
+      if (touchPoints.size < 2) orbit.zoom(gestureScale / event.scale)
+      gestureScale = event.scale
+    }
+    const onGestureEnd = (event) => {
+      if (gestureScale !== null) event.preventDefault()
+      gestureScale = null
+    }
 
     const onKeyDown = (event) => {
       // Discovery moves focus to Close; keep the held scan key from activating it.
@@ -1776,6 +1833,12 @@ export default function App() {
       velocity.set(0, 0, 0)
       drag.active = false
       drag.pointerId = null
+      for (const pointerId of touchPoints.keys()) {
+        if (mount.hasPointerCapture(pointerId)) mount.releasePointerCapture(pointerId)
+      }
+      touchPoints.clear()
+      pinchDistance = 0
+      gestureScale = null
       setScopeActive(false)
     }
 
@@ -1794,6 +1857,10 @@ export default function App() {
     mount.addEventListener('pointercancel', onBlur)
     mount.addEventListener('pointerleave', onPointerLeave)
     mount.addEventListener('contextmenu', onContextMenu)
+    mount.addEventListener('wheel', onWheel, { passive: false })
+    mount.addEventListener('gesturestart', onGestureStart, { passive: false })
+    mount.addEventListener('gesturechange', onGestureChange, { passive: false })
+    mount.addEventListener('gestureend', onGestureEnd, { passive: false })
     window.addEventListener('pointermove', onPointerHover)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -2130,6 +2197,10 @@ export default function App() {
       mount.removeEventListener('pointercancel', onBlur)
       mount.removeEventListener('pointerleave', onPointerLeave)
       mount.removeEventListener('contextmenu', onContextMenu)
+      mount.removeEventListener('wheel', onWheel)
+      mount.removeEventListener('gesturestart', onGestureStart)
+      mount.removeEventListener('gesturechange', onGestureChange)
+      mount.removeEventListener('gestureend', onGestureEnd)
       window.removeEventListener('pointermove', onPointerHover)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)

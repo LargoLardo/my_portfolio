@@ -38,6 +38,8 @@ const click = selector => evaluate(`document.querySelector(${JSON.stringify(sele
 const progress = () => evaluate("1 - Number(document.querySelector('.scope-progress').style.strokeDashoffset)")
 const gap = () => evaluate("parseFloat(document.querySelector('.scope-signal').style.getPropertyValue('--signal-gap'))")
 const mouse = (type, x, y, button = 'right', buttons = 2) => send('Input.dispatchMouseEvent', { type, x, y, button, buttons, clickCount: 1 })
+const distanceToAbout = "__spaceGraphics.camera.position.distanceTo(__spaceGraphics.planets.find(p => p.userData.discoveryId === 'about').position)"
+const wheel = (deltaY, modifiers = 0, x = 1000) => send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y: 400, deltaX: 0, deltaY, modifiers })
 let audioProbeId
 try {
   await send('Runtime.enable')
@@ -49,7 +51,14 @@ try {
     window.__THREE_DEVTOOLS__ = new EventTarget();
     window.__THREE_DEVTOOLS__.addEventListener('observe', ({ detail }) => {
       if (detail.isScene) window.__spaceGraphics.scenes.push(detail);
-      if (detail.isWebGLRenderer) window.__spaceGraphics.renderer = detail;
+      if (detail.isWebGLRenderer) {
+        window.__spaceGraphics.renderer = detail;
+        const render = detail.render;
+        detail.render = function(scene, camera) {
+          if (scene.children.some(group => group.children.some(p => p.userData.companions))) window.__spaceGraphics.camera = camera;
+          return render.call(this, scene, camera);
+        };
+      }
     });
     window.Audio = new Proxy(window.Audio, {
       construct(Target, args) {
@@ -78,6 +87,7 @@ try {
     const { scenes, renderer } = window.__spaceGraphics;
     const scene = scenes.findLast(scene => scene.children.some(group => group.children.some(p => p.userData.companions)));
     const planets = scene.children.flatMap(group => group.children).filter(p => p.userData.companions);
+    window.__spaceGraphics.planets = planets;
     const starFades = scene.children.filter(o => o.isPoints && o.geometry.attributes.color?.itemSize === 4).map(o => {
       const colors = o.geometry.attributes.color;
       const values = Array.from({ length: colors.count }, (_, i) => colors.getW(i));
@@ -136,6 +146,28 @@ try {
   await mouse('mouseReleased', 729, 385, 'right', 0)
   assert.equal(await evaluate("document.querySelector('.scope-button').getAttribute('aria-pressed')"), 'false')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
+  await pause(500)
+  const initialDistance = await evaluate(distanceToAbout)
+  await wheel(-160)
+  await waitFor(`${distanceToAbout} < ${initialDistance * 0.9}`)
+  await wheel(160)
+  await waitFor(`Math.abs(${distanceToAbout} - ${initialDistance}) < 0.1`)
+  await wheel(-40, 2) // Trackpad pinch is delivered as Ctrl+wheel in Chromium.
+  await waitFor(`${distanceToAbout} < ${initialDistance * 0.8}`)
+  assert.equal(await evaluate('visualViewport.scale'), 1, 'Pinching the scene must not zoom the browser page')
+  await wheel(40, 2)
+  await waitFor(`Math.abs(${distanceToAbout} - ${initialDistance}) < 0.1`)
+  await wheel(-160, 0, 150)
+  await pause(300)
+  assert.ok(Math.abs(await evaluate(distanceToAbout) - initialDistance) < 0.1, 'Scrolling the description must not zoom the planet')
+  await evaluate(`for (const [type,scale] of [['gesturestart',1],['gesturechange',1.5],['gestureend',1.5]]) {
+    const event = new Event(type,{bubbles:true,cancelable:true});
+    Object.defineProperty(event,'scale',{value:scale});
+    document.querySelector('.scene-mount').dispatchEvent(event);
+  }`)
+  await waitFor(`${distanceToAbout} < ${initialDistance * 0.8}`)
+  await evaluate("document.querySelector('.scene-mount').dispatchEvent(new WheelEvent('wheel',{deltaY:Math.log(1.5)/0.0015,cancelable:true}))")
+  await waitFor(`Math.abs(${distanceToAbout} - ${initialDistance}) < 0.1`)
   assert.ok(await evaluate("document.querySelector('.analysis-connector path').getAttribute('d')?.startsWith('M')"), 'Analysis must be connected to the projected planet')
   await evaluate("document.querySelector('.scene-mount').focus()")
   await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Space', key: ' ', windowsVirtualKeyCode: 32 })
@@ -198,6 +230,24 @@ try {
   assert.ok(await evaluate("document.querySelector('.discovery-panel').getBoundingClientRect().top > 300"), 'Keep a visible sky window above the mobile analysis')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
   assert.ok(await evaluate("document.querySelector('.section-list').clientHeight > 80"), 'Mobile log needs enough space to show destinations')
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+  await pause(500)
+  const mobileDistance = await evaluate(distanceToAbout)
+  const touch = (type, points) => send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([id,x,y]) => ({id,x,y,radiusX:2,radiusY:2,force:1})) })
+  await touch('touchStart', [[1,140,180],[2,240,180]])
+  await touch('touchMove', [[1,110,180],[2,270,180]])
+  await waitFor(`${distanceToAbout} < ${mobileDistance * 0.8}`)
+  await touch('touchMove', [[1,150,180],[2,230,180]])
+  await waitFor(`${distanceToAbout} > ${mobileDistance * 1.1}`)
+  await touch('touchEnd', [[2,230,180]]) // Lift just the second finger.
+  assert.equal(await evaluate('visualViewport.scale'), 1, 'Phone pinches zoom the planet, not the page')
+  const beforeTouchDrag = await evaluate('__spaceGraphics.camera.quaternion.toArray()')
+  await touch('touchMove', [[1,210,180]])
+  await touch('touchCancel', [])
+  await pause(300)
+  assert.ok(await evaluate(`__spaceGraphics.camera.quaternion.angleTo(new __spaceGraphics.camera.quaternion.constructor(...${JSON.stringify(beforeTouchDrag)})) > 0.12`), 'Lifting one finger resumes orbit dragging without restarting the gesture')
+  assert.equal(await evaluate("document.querySelector('.space-app').dataset.cameraMode"), 'orbit', 'Pinches and cancellation must not close inspection')
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await click('.scope-button')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   assert.equal(await evaluate('document.documentElement.scrollWidth'), 390)
@@ -243,10 +293,11 @@ try {
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   await waitFor("!document.querySelector('.discovery-panel')")
   assert.deepEqual(errors, [])
-  console.log('PASS: approaching/merging signal arcs, scan progress and completion, scope aiming and Space release after discovery, mute, smooth/cancellable menu exits, Escape, all destinations, orbital flight and return, camp music volume during orbit/transfers, rotating surface connector and occlusion, simultaneous desktop/mobile panels.')
+  console.log('PASS: wheel/trackpad/phone zoom, menu scrolling, signal arcs, scan progress, discovery, mute, smooth menu exits, all destinations, orbital flight and return, camp music volume, surface connector, desktop/mobile panels.')
 } finally {
   if (audioProbeId) await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: audioProbeId })
   await send('Emulation.setEmulatedMedia', { features: [] })
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await send('Emulation.clearDeviceMetricsOverride')
   socket.close()
 }
