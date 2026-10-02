@@ -2,6 +2,21 @@
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { rollPlanetCompanions, createPlanetCompanions } from '../src/spaceCompanions.js'
+import { makePlanetGeometry } from '../src/spaceMaterials.js'
+
+for (const bands of [false, true]) {
+  const geometry = makePlanetGeometry(3, 12, { bands })
+  const positions = geometry.attributes.position, point = new THREE.Vector3()
+  const radii = Array.from({ length: positions.count }, (_, i) => point.fromBufferAttribute(positions, i).length())
+  if (bands) {
+    assert.equal(geometry.userData.craters, undefined, 'Gas giants must not have craters')
+    assert.ok(radii.every(radius => Math.abs(radius - 3) < 1e-6))
+  } else {
+    assert.ok(geometry.userData.craters.length > 0)
+    assert.ok(Math.min(...radii) < 2.96 && Math.max(...radii) > 3.01, 'Rocky craters need recessed bowls and raised rims')
+  }
+  geometry.dispose()
+}
 
 let seed = 7823
 const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296)
@@ -41,6 +56,14 @@ for (const rings of [false, true]) {
     const system = createPlanetCompanions({ radius: 3, planetStyle: { rings } }, particleTexture, () => rolls.shift() ?? random())
     assert.equal(system.config.moonCount, count)
     assert.equal(system.group.visible, false)
+    if (count === 3) {
+      assert.equal(new Set(system.moons.map(moon => moon.surface)).size, 3, 'Moons should have distinct surface textures')
+      const radii = system.moons.map(moon => moon.radius)
+      assert.ok(Math.max(...radii) / Math.min(...radii) > 1.8, 'Moon sizes should vary visibly')
+      assert.ok(system.moons[0].speed > system.moons[2].speed, 'Outer moons should orbit more slowly')
+      const ice = system.moons.find(moon => moon.surface === 'ice')
+      assert.equal(ice.mesh.geometry.userData.craters, undefined)
+    }
     const clearance = 3 * (rings ? 2.25 : 1.15), visited = new Set()
     const previous = new THREE.Vector3()
     for (let frame = 0; frame < 1500; frame++) {

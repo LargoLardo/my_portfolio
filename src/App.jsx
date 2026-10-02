@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { createPlanetCompanions } from './spaceCompanions.js'
@@ -1295,7 +1295,7 @@ export default function App() {
       planetTexture.colorSpace = THREE.SRGBColorSpace
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius, 128, 96),
+        makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle),
         makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle),
       )
       planet.position.set(...discovery.position).multiplyScalar(1.65)
@@ -2036,6 +2036,13 @@ export default function App() {
               .applyQuaternion(camera.quaternion)
               .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
               .add(orbitPlanet.position)
+            // Keep the fixed landmark on the actual surface, including crater bowls.
+            orbitPlanet.updateWorldMatrix(true, false)
+            anchorNormal.copy(projected).sub(orbitPlanet.position).normalize()
+            anchorView.copy(orbitPlanet.position).addScaledVector(anchorNormal, discovery.radius * 1.1)
+            raycaster.set(anchorView, anchorNormal.negate())
+            const surfaceHit = raycaster.intersectObject(orbitPlanet, false)[0]
+            if (surfaceHit) projected.copy(surfaceHit.point)
             orbitPlanet.userData.menuAnchor = orbitPlanet.worldToLocal(projected.clone())
           }
           orbitPlanet.localToWorld(projected.copy(orbitPlanet.userData.menuAnchor))

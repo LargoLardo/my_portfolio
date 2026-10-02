@@ -74,6 +74,12 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
       let value = style.bands
         ? 0.26 + noise(ny * 16 + turbulence * 0.9, seed, 0, seed) * 0.5 + Math.sin(ny * 115 + turbulence * 6) * 0.025 + (detail - 0.5) * 0.12
         : THREE.MathUtils.clamp((turbulence - 0.28) * 1.9 + (detail - 0.5) * 0.16, 0, 1)
+      if (style.surface === 'dust') value = 0.3 + turbulence * 0.4 + (detail - 0.5) * 0.3
+      if (style.surface === 'ice') {
+        const cracks = 1 - THREE.MathUtils.smoothstep(Math.abs(detail - 0.49), 0.012, 0.07)
+        value = 0.58 + turbulence * 0.42 - cracks * 0.45
+      }
+      if (style.surface === 'basalt') value = 0.1 + turbulence * 0.28 + THREE.MathUtils.smoothstep(detail, 0.57, 0.72) * 0.5
       if (!style.bands) value = THREE.MathUtils.lerp(value, 0.94, THREE.MathUtils.smoothstep(Math.abs(ny), 0.88, 0.99) * 0.65)
       const stop = THREE.MathUtils.clamp(value, 0, 0.999) * (colors.length - 1)
       const index = Math.floor(stop)
@@ -88,6 +94,41 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
   }
   context.putImageData(image, 0, 0)
   return canvas
+}
+
+export function makePlanetGeometry(radius, seed, style = {}, widthSegments = 128, heightSegments = 96) {
+  const geometry = new THREE.SphereGeometry(radius, widthSegments, heightSegments)
+  if (style.bands || style.craters === false) return geometry
+  const craters = [], point = new THREE.Vector3()
+  for (let i = 0; i < 24 && craters.length < 8; i++) {
+    const y = hash(i, 0, 0, seed) * 1.8 - 0.9, angle = hash(i, 1, 0, seed) * Math.PI * 2
+    const normal = new THREE.Vector3(Math.cos(angle) * Math.sqrt(1 - y * y), y, Math.sin(angle) * Math.sqrt(1 - y * y))
+    const span = 0.1 + hash(i, 2, 0, seed) * 0.15
+    if (craters.some(crater => crater.normal.angleTo(normal) < crater.span + span + 0.06)) continue
+    craters.push({ normal, span, depth: radius * (0.02 + hash(i, 3, 0, seed) * 0.025) })
+  }
+  const positions = geometry.attributes.position
+  const colors = new Float32Array(positions.count * 3)
+  for (let i = 0; i < positions.count; i++) {
+    point.fromBufferAttribute(positions, i).normalize()
+    let height = 0, tint = 1
+    for (const crater of craters) {
+      const d = point.angleTo(crater.normal) / crater.span
+      if (d >= 1.15) continue
+      const bowl = -crater.depth * Math.max(0, 1 - (d / 0.79) ** 2) ** 2
+      const rim = crater.depth * 0.46 * Math.exp(-(((d - 0.81) / 0.14) ** 2))
+      height += bowl + rim
+      tint += (bowl * 0.48 + rim * 0.45) / crater.depth
+    }
+    point.multiplyScalar(radius + height)
+    positions.setXYZ(i, point.x, point.y, point.z)
+    colors.fill(tint, i * 3, i * 3 + 3)
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  geometry.userData.craters = craters
+  return geometry
 }
 
 // Object-space noise stays attached to the rotating globe and has no UV seam.
@@ -111,7 +152,8 @@ const planetNoise = `
 export function makePlanetSurfaceMaterial(texture, seed, style) {
   const material = new THREE.MeshStandardMaterial({
     map: texture, bumpMap: texture, bumpScale: style.bands ? 0.015 : 0.065,
-    roughness: 0.94, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.025, fog: false,
+    vertexColors: !style.bands && style.craters !== false,
+    roughness: style.surface === 'ice' ? 0.42 : 0.94, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.025, fog: false,
   })
   const detail = { value: 0 }
   material.userData.detail = detail
@@ -144,6 +186,9 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
         float height = relief * orbitDetail * mix(0.045, 0.006, banded);
         normal = perturbNormalArb(-vViewPosition, normal, vec2(dFdx(height), dFdy(height)), faceDirection);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        #ifdef USE_COLOR
+          totalEmissiveRadiance *= vColor.rgb;
+        #endif
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
         totalEmissiveRadiance *= surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
   }

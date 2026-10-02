@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { makePlanetTexture, makePlanetSurfaceMaterial } from './spaceMaterials.js'
+import { makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry } from './spaceMaterials.js'
 
 const TAU = Math.PI * 2
 const UP = new THREE.Vector3(0, 1, 0)
@@ -26,6 +26,9 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
   const moons = []
   const materials = []
   const paletteOffset = Math.floor(random() * MOON_PALETTES.length)
+  const sizeOffset = Math.floor(random() * 3), surfaceOffset = Math.floor(random() * 3)
+  const orbitalRate = 0.1 + random() * 0.07
+  let previousOrbit = planetClearance, previousRadius = 0
   const moonPosition = (moon, time, out) => {
     const angle = moon.phase + time * moon.speed
     return out.set(Math.cos(angle) * moon.orbit, 0, Math.sin(angle) * moon.orbit).applyQuaternion(moon.tilt)
@@ -37,23 +40,28 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
     return material
   }
   for (let i = 0; i < config.moonCount; i++) {
-    const moonRadius = radius * (0.17 + random() * 0.07)
+    const moonRadius = radius * (0.09 + ((sizeOffset + i) % 3) * 0.095 + random() * 0.055)
+    const orbit = previousOrbit + previousRadius + moonRadius + radius * 0.36
+    previousOrbit = orbit
+    previousRadius = moonRadius
+    const surface = ['dust', 'ice', 'basalt'][(surfaceOffset + i) % 3]
+    const style = { surface, cracked: surface === 'ice', craters: surface !== 'ice' }
     const seed = Math.floor(random() * 100000)
-    const texture = new THREE.CanvasTexture(makePlanetTexture(MOON_PALETTES[(paletteOffset + i) % MOON_PALETTES.length], seed, {}, 256, 128))
+    const texture = new THREE.CanvasTexture(makePlanetTexture(MOON_PALETTES[(paletteOffset + i) % MOON_PALETTES.length], seed, style, 256, 128))
     texture.colorSpace = THREE.SRGBColorSpace
-    const material = register(makePlanetSurfaceMaterial(texture, seed, {}))
+    const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)
     material.emissiveIntensity = 0.72
-    material.bumpScale = moonRadius * 0.065
+    material.bumpScale = moonRadius * (surface === 'ice' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
     material.userData.detail.value = 1
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(moonRadius, 48, 32), material)
+    const mesh = new THREE.Mesh(makePlanetGeometry(moonRadius, seed, style, 64, 48), material)
     mesh.name = `moon-${i + 1}`
     group.add(mesh)
     moons.push({
-      mesh, radius: moonRadius,
-      orbit: planetClearance + radius * (0.55 + i * 0.62),
+      mesh, radius: moonRadius, surface, orbit,
       phase: random() * TAU,
-      speed: (0.065 + random() * 0.02) / (1 + i * 0.5),
+      speed: orbitalRate * (0.85 + random() * 0.3) * (moons.length ? (moons[0].orbit / orbit) ** 1.5 : 1),
+      spin: 0.015 + random() * 0.06,
       tilt: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18 + random() * 0.35, random() * TAU, (random() - 0.5) * 0.4)),
     })
   }
@@ -91,6 +99,9 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
       turn.setFromUnitVectors(a, b)
       rotation.identity().slerp(turn, blend)
       out.copy(a).applyQuaternion(rotation).multiplyScalar(THREE.MathUtils.lerp(distanceA, distanceB, blend))
+      // Pass above the moving moons while preserving the camera's system bounds.
+      out.y += Math.sin(Math.PI * blend) ** 2 * radius * 1.2
+      out.setLength(THREE.MathUtils.lerp(distanceA, distanceB, blend))
     }
     // Smooth clearance keeps the saucer outside both the globe/rings and moons.
     const clear = (position, minimum) => {
@@ -150,7 +161,7 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
       if (!reducedMotion) age += dt
       moons.forEach(moon => {
         moonPosition(moon, age, moon.mesh.position)
-        if (!reducedMotion) moon.mesh.rotation.y += dt * 0.025
+        if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
       })
       if (!config.ufo) return
       flightPosition(age, craft.position)
