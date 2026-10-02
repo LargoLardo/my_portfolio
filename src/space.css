@@ -240,10 +240,11 @@
   .section-sidebar { right: 16px; }
   .discovery-panel { top: 48%; left: 16px; right: auto; }
   .has-sidebar.has-discovery .discovery-panel { top: 40%; bottom: calc(32% + 8px); }
-  .has-sidebar.has-discovery .section-sidebar { top: 68%; }
+  .has-sidebar.has-discovery .section-sidebar { top: 68%; padding: 14px; }
   .has-sidebar.has-discovery .section-intro { display: none; }
-  .has-sidebar.has-discovery .section-list { margin-top: 16px; }
-  .has-sidebar.has-discovery .section-sidebar-header strong { font-size: 20px; }
+  .has-sidebar.has-discovery .section-list { margin-top: 10px; }
+  .has-sidebar.has-discovery .section-group-label, .has-sidebar.has-discovery .log-tools { display: none; }
+  .has-sidebar.has-discovery .section-sidebar-header strong { margin-top: 0; font-size: 20px; }
   .has-sidebar.has-discovery .section-sidebar-header span { display: none; }
 }
 

@@ -14,6 +14,8 @@ const errors = []
 socket.addEventListener('message', ({ data }) => {
   const message = JSON.parse(data)
   if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails)
+  if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') errors.push(message.params.args)
+  if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') errors.push(message.params.entry.text)
   if (!message.id) return
   const request = pending.get(message.id)
   pending.delete(message.id)
@@ -38,6 +40,7 @@ const gap = () => evaluate("parseFloat(document.querySelector('.scope-signal').s
 const mouse = (type, x, y, button = 'right', buttons = 2) => send('Input.dispatchMouseEvent', { type, x, y, button, buttons, clickCount: 1 })
 try {
   await send('Runtime.enable')
+  await send('Log.enable')
   await send('Page.enable')
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
   const loaded = new Promise(resolve => {
@@ -89,6 +92,10 @@ try {
   assert.equal(await evaluate("document.querySelector('.scope-button').getAttribute('aria-pressed')"), 'false')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
   assert.ok(await evaluate("document.querySelector('.analysis-connector path').getAttribute('d')?.startsWith('M')"), 'Analysis must be connected to the projected planet')
+  await evaluate("document.querySelector('.scene-mount').focus()")
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Space', key: ' ', windowsVirtualKeyCode: 32 })
+  assert.equal(await evaluate("document.querySelector('.scope-button').getAttribute('aria-pressed')"), 'false', 'Orbit controls must not activate ground scanning')
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Space', key: ' ', windowsVirtualKeyCode: 32 })
   await click('.panel-close')
   assert.ok(await evaluate("document.querySelector('.discovery-panel')?.classList.contains('is-closing')"), 'Keep the panel mounted for its exit animation')
   await pause(80)
@@ -131,13 +138,21 @@ try {
   assert.ok(await evaluate("(()=>{const p=document.querySelector('.discovery-panel').getBoundingClientRect(),l=document.querySelector('.section-sidebar').getBoundingClientRect();return p.bottom<l.top&&p.left>=0&&l.right<=innerWidth})()"), 'Panels must stack without overlap on phones')
   assert.ok(await evaluate("document.querySelector('.discovery-panel').getBoundingClientRect().top > 300"), 'Keep a visible sky window above the mobile analysis')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
+  assert.ok(await evaluate("document.querySelector('.section-list').clientHeight > 80"), 'Mobile log needs enough space to show destinations')
   await click('.scope-button')
   await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
   assert.equal(await evaluate('document.documentElement.scrollWidth'), 390)
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 8)
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+  await evaluate("document.querySelector('.section-list button').click()")
+  await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'orbit'")
+  await click('.panel-close')
+  await waitFor("document.querySelector('.space-app').dataset.cameraMode === 'ground'")
+  await waitFor("!document.querySelector('.discovery-panel')")
   assert.deepEqual(errors, [])
   console.log('PASS: approaching/merging signal arcs, scan progress and completion, scope aiming, mute, smooth/cancellable menu exits, Escape, all destinations, orbital flight and return, analysis connector, simultaneous desktop/mobile panels.')
 } finally {
+  await send('Emulation.setEmulatedMedia', { features: [] })
   await send('Emulation.clearDeviceMetricsOverride')
   socket.close()
 }

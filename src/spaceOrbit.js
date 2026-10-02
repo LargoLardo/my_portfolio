@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 const UP = new THREE.Vector3(0, 1, 0)
 
-export function createPlanetOrbit(camera, onPhaseChange) {
+export function createPlanetOrbit(camera, onPhaseChange, planets) {
   let phase = 'ground'
   let target = null
   let age = 0
@@ -16,6 +16,8 @@ export function createPlanetOrbit(camera, onPhaseChange) {
   const offset = new THREE.Vector3()
   const endPosition = new THREE.Vector3()
   const path = new THREE.CubicBezierCurve3()
+  const clearancePoint = new THREE.Vector3()
+  const bend = new THREE.Vector3()
 
   const setPhase = value => {
     if (phase === value) return
@@ -65,6 +67,23 @@ export function createPlanetOrbit(camera, onPhaseChange) {
         path.v1.copy(path.v0).addScaledVector(direction, Math.max(5, travel * 0.2))
         direction.copy(target ? path.v3.clone().sub(target.position).normalize() : UP)
         path.v2.copy(path.v3).addScaledVector(direction, Math.max(5, travel * 0.2))
+        // A far-side departure may cross the globe. Lift the route sideways until
+        // the whole flight clears every surface, including decorative rings.
+        direction.subVectors(path.v3, path.v0).normalize()
+        bend.copy(UP).addScaledVector(direction, -direction.dot(UP))
+        if (bend.lengthSq() < 0.01) bend.set(1, 0, 0)
+        bend.normalize()
+        for (let attempt = 0; attempt < 6; attempt++) {
+          let blocked = false
+          for (let sample = 1; sample < 96 && !blocked; sample++) {
+            path.getPoint(sample / 96, clearancePoint)
+            blocked = planets.some(body => clearancePoint.distanceTo(body.position) < body.userData.orbitRadius * 1.15)
+          }
+          if (!blocked) break
+          const lift = Math.max(8, travel * 0.25) * (attempt + 1)
+          path.v1.addScaledVector(bend, lift)
+          path.v2.addScaledVector(bend, lift)
+        }
       }
       if (phase === 'ground') return
       distance = THREE.MathUtils.damp(distance, desiredDistance, 5, dt)

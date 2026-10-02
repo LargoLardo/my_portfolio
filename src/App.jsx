@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
+import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -710,7 +710,6 @@ export default function App() {
 
     const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
-    const orbit = createPlanetOrbit(camera, setOrbitPhase)
 
     const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
     scene.add(ambient)
@@ -1303,30 +1302,12 @@ export default function App() {
       planetTexture.colorSpace = THREE.SRGBColorSpace
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius, 64, 48),
-        new THREE.MeshStandardMaterial({
-          map: planetTexture,
-          bumpMap: planetTexture,
-          bumpScale: discovery.planetStyle?.bands ? 0.015 : 0.065,
-          roughness: 0.94,
-          emissive: 0xffffff,
-          emissiveMap: planetTexture,
-          emissiveIntensity: 0.025,
-          fog: false,
-        }),
+        new THREE.SphereGeometry(discovery.radius, 128, 96),
+        makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle),
       )
-      // The scope gathers light from the day side without brightening the campsite.
-      planet.material.onBeforeCompile = (shader) => {
-        shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal;')
-          .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvPlanetNormal = normalize(mat3(modelMatrix) * objectNormal);')
-        shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal;')
-          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-            totalEmissiveRadiance *= 0.06 + 0.94 * max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);`)
-      }
       planet.position.set(...discovery.position).multiplyScalar(1.65)
       planet.userData.discoveryId = discovery.id
+      planet.userData.orbitRadius = discovery.radius * (discovery.planetStyle.rings ? 2.2 : 1.1)
       planet.userData.discovered = discoveredIdsRef.current.has(discovery.id)
       planet.userData.discoveryGlow = 0
       skyGroup.add(planet)
@@ -1339,6 +1320,15 @@ export default function App() {
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
       planet.userData.atmosphere = atmosphere
+      if (!discovery.planetStyle.bands && !discovery.planetStyle.cracked) {
+        const clouds = new THREE.Mesh(
+          new THREE.SphereGeometry(discovery.radius * 1.008, 96, 64),
+          makePlanetCloudMaterial(index + 21, discovery.palette.at(-1)),
+        )
+        clouds.position.copy(planet.position)
+        skyGroup.add(clouds)
+        planet.userData.clouds = clouds
+      }
 
       let decorRing = null
       if (discovery.planetStyle?.rings) {
@@ -1353,6 +1343,9 @@ export default function App() {
           map: makeRingTexture(index + 1), roughness: 1, transparent: true, opacity: 0.82,
           depthWrite: false, side: THREE.DoubleSide, fog: false,
         }))
+        decorRing.material.emissive.set(0x656457)
+        decorRing.material.emissiveMap = decorRing.material.map
+        decorRing.material.emissiveIntensity = 0
         decorRing.position.copy(planet.position)
         decorRing.rotation.set(Math.PI / 2 + discovery.planetStyle.ringTilt, index * 0.48, index * 0.2)
         skyGroup.add(decorRing)
@@ -1447,6 +1440,7 @@ export default function App() {
       burstParticles.material.opacity = 1
     }
 
+    const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
     const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
@@ -2004,24 +1998,36 @@ export default function App() {
       updateScopeAutoOpen(displayedProximity === 1 ? focusedId : null, dt)
 
       planetMeshes.forEach((planet, index) => {
-        const focused = focusedId === DISCOVERIES[index].id
+        const planetData = DISCOVERIES[index]
+        const focused = focusedId === planetData.id
         planet.userData.discoveryGlow = Math.max(0, planet.userData.discoveryGlow - dt * 1.2)
         const burstGlow = planet.userData.discoveryGlow
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
+        const inspecting = orbitPlanet === planet
+        const closeDetail = inspecting ? 1 - smoothstep(planetData.radius * 7, planetData.radius * 24, camera.position.distanceTo(planet.position)) : 0
+        planet.material.userData.detail.value = THREE.MathUtils.damp(planet.material.userData.detail.value, closeDetail, 4, dt)
+        const clouds = planet.userData.clouds
+        if (clouds) {
+          clouds.material.opacity = planet.material.userData.detail.value * 0.52
+          clouds.visible = clouds.material.opacity > 0.001
+          clouds.scale.copy(planet.scale)
+          if (!reducedMotion) clouds.rotation.y += dt * (0.018 + index * 0.002)
+        }
         const spotted = focused && scopeAmount
-        const brightness = scopeAmount ? 1.7 : planet.userData.discovered ? 0.95 : 0.62
+        const brightness = inspecting ? 1.45 : scopeAmount ? 1.7 : planet.userData.discovered ? 0.95 : 0.62
         planetTint.setRGB(brightness, brightness, brightness)
         planet.material.color.lerp(planetTint, blend)
-        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, spotted ? 1.35 : scopeAmount ? 0.65 : planet.userData.discovered ? 0.28 : 0.12, blend)
+        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, inspecting ? 0.72 : spotted ? 1.35 : scopeAmount ? 0.65 : planet.userData.discovered ? 0.28 : 0.12, blend)
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
-        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.32 : scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
           decorRing.scale.copy(planet.scale)
-          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, scopeAmount ? 0.8 : planet.userData.discovered ? 0.42 : 0.28, blend)
+          decorRing.material.emissiveIntensity = THREE.MathUtils.damp(decorRing.material.emissiveIntensity, inspecting ? 0.22 : 0, 5, dt)
+          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, inspecting ? 0.92 : scopeAmount ? 0.8 : planet.userData.discovered ? 0.42 : 0.28, blend)
         }
       })
 
@@ -2079,7 +2085,7 @@ export default function App() {
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
-      <div ref={mountRef} className="scene-mount" inert={!ignited} tabIndex={0} role="region" aria-label="Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard." />
+      <div ref={mountRef} className="scene-mount" inert={!ignited} tabIndex={0} role="region" aria-label={orbitPhase === 'ground' ? 'Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard.' : 'Planetary orbit. Drag or use arrow keys to orbit. Press Escape to return to camp.'} />
 
       <div className="darkness" aria-hidden="true" onAnimationEnd={(event) => {
         if (event.animationName === 'darkness-ignition') setIgnited(true)
@@ -2158,7 +2164,7 @@ export default function App() {
         <h2>A little curiosity goes a long way.</h2>
         <p>Drag to look around. Use WASD or arrow keys to walk around the campfire.</p>
         <p>Hold Space or the right mouse button to scan. On touch screens, tap Signalscope, then drag to aim.</p>
-        <p>Keep a planet in the center of the scope to open its story. Field log takes you directly to any destination.</p>
+        <p>Keep a planet in the center of the scope to travel into orbit. Drag or use arrow keys to explore, then close the analysis to return to camp. Field log takes you directly to any destination.</p>
         <p>Click the phonograph to change the music. Press Escape to close a panel.</p>
       </aside>
 

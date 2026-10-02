@@ -90,6 +90,87 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
   return canvas
 }
 
+// Object-space noise stays attached to the rotating globe and has no UV seam.
+const planetNoise = `
+  float planetHash(vec3 p) {
+    p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+  }
+  float planetNoise(vec3 p) {
+    vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(planetHash(i), planetHash(i + vec3(1,0,0)), f.x),
+                   mix(planetHash(i + vec3(0,1,0)), planetHash(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(planetHash(i + vec3(0,0,1)), planetHash(i + vec3(1,0,1)), f.x),
+                   mix(planetHash(i + vec3(0,1,1)), planetHash(i + vec3(1,1,1)), f.x), f.y), f.z);
+  }
+  float planetFbm(vec3 p) {
+    return planetNoise(p) * 0.57 + planetNoise(p * 2.03) * 0.28 + planetNoise(p * 4.07) * 0.15;
+  }
+`
+
+export function makePlanetSurfaceMaterial(texture, seed, style) {
+  const material = new THREE.MeshStandardMaterial({
+    map: texture, bumpMap: texture, bumpScale: style.bands ? 0.015 : 0.065,
+    roughness: 0.94, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.025, fog: false,
+  })
+  const detail = { value: 0 }
+  material.userData.detail = detail
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, {
+      orbitDetail: detail, surfaceSeed: { value: seed }, banded: { value: style.bands ? 1 : 0 },
+      fractured: { value: style.cracked ? 1 : 0 },
+    })
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal; varying vec3 vPlanetPoint;')
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+        vPlanetNormal = normalize(mat3(modelMatrix) * objectNormal);
+        vPlanetPoint = position;`)
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vPlanetNormal; varying vec3 vPlanetPoint;
+        uniform float orbitDetail, surfaceSeed, banded, fractured;
+        ${planetNoise}`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        vec3 surfacePoint = normalize(vPlanetPoint);
+        float turbulence = planetFbm(surfacePoint * 18.0 + surfaceSeed);
+        float ridges = pow(1.0 - abs(planetFbm(surfacePoint * 65.0 + turbulence * 3.0) * 2.0 - 1.0), 3.0);
+        float grain = planetNoise(surfacePoint * 240.0 + surfaceSeed);
+        float bands = sin(surfacePoint.y * 260.0 + turbulence * 12.0) * 0.5 + 0.5;
+        float fissure = 1.0 - smoothstep(0.025, 0.09, abs(turbulence - 0.5));
+        float relief = mix(ridges * 0.7 + grain * 0.3 - fissure * fractured * 0.4, bands * 0.6 + turbulence * 0.4, banded);
+        float surfaceTint = mix(1.0, 0.72 + relief * 0.55, orbitDetail);
+        diffuseColor.rgb *= surfaceTint;`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        float height = relief * orbitDetail * mix(0.045, 0.006, banded);
+        normal = perturbNormalArb(-vViewPosition, normal, vec2(dFdx(height), dFdy(height)), faceDirection);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
+        totalEmissiveRadiance *= surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
+  }
+  return material
+}
+
+export function makePlanetCloudMaterial(seed, color) {
+  const material = new THREE.MeshStandardMaterial({
+    color, emissive: color, emissiveIntensity: 0.09, transparent: true,
+    opacity: 0, depthWrite: false, roughness: 1, fog: false,
+  })
+  material.onBeforeCompile = shader => {
+    shader.uniforms.cloudSeed = { value: seed }
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCloudPoint;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloudPoint = position;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vCloudPoint; uniform float cloudSeed; ${planetNoise}`)
+      .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+        vec3 p = normalize(vCloudPoint);
+        float warp = planetFbm(p * 5.0 + cloudSeed);
+        float cloud = planetFbm(p * vec3(9.0, 18.0, 9.0) + warp * 4.0 + cloudSeed);
+        diffuseColor.a *= smoothstep(0.51, 0.72, cloud);`)
+  }
+  return material
+}
+
 export function makeParticleTexture() {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 32
