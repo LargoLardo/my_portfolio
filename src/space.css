@@ -24,7 +24,7 @@
 .scene-mount:active { cursor: grabbing; }
 .space-app button, .space-app a { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .space-app :focus-visible { outline: 2px solid var(--suit-amber); outline-offset: 5px; }
-.scene-mount:focus-visible { outline-offset: -7px; }
+.space-app .scene-mount:focus-visible { outline: none; }
 .space-app button { transition: background 160ms ease, border-color 160ms ease, color 160ms ease; }
 
 .darkness, .vignette { position: absolute; inset: 0; pointer-events: none; }
@@ -99,7 +99,7 @@
 }
 .reticle.is-showing-prompt .reticle-prompt { opacity: 1; }
 
-.scope-overlay { position: absolute; inset: 0; z-index: 5; opacity: 0; pointer-events: none; transition: opacity 250ms ease; }
+.scope-overlay { position: absolute; inset: 0; z-index: 5; opacity: 0; pointer-events: none; transition: opacity 130ms ease; }
 .is-scoping .scope-overlay { opacity: 1; }
 .scope-ring {
   position: absolute; top: 50%; left: 50%;
@@ -121,7 +121,7 @@
   border: 1px dashed rgba(219, 211, 177, 0.56); border-radius: 50%;
   transform: translate(-50%, -50%) scale(var(--scope-lock-scale, 1));
   opacity: var(--scope-lock-opacity, 0.24);
-  transition: transform 120ms linear, opacity 120ms linear;
+  transition: transform 80ms linear, opacity 80ms linear;
 }
 .scope-completion-band {
   position: absolute; top: 50%; left: 50%;
@@ -130,12 +130,12 @@
   overflow: visible; opacity: 0.9;
 }
 .scope-completion-band circle { fill: none; stroke: var(--scope-progress-color); stroke-width: 0.42; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
-.scan-complete .scope-ring { animation: scope-resolve 1s ease-out; }
+.scan-complete .scope-ring { animation: scope-resolve 550ms ease-out; }
 .scan-complete .scope-completion-band { filter: drop-shadow(0 0 6px var(--scope-progress-color)); }
 .discovery-confirmation {
   position: absolute; top: calc(50% + 95px); left: 50%; z-index: 9;
   transform: translateX(-50%); text-align: center; pointer-events: none;
-  animation: signal-found 1.1s ease-out both;
+  animation: signal-found 650ms ease-out both;
 }
 .discovery-confirmation span { display: block; color: var(--suit-amber); font: 9px var(--instrument-font); letter-spacing: 0.22em; text-transform: uppercase; }
 .discovery-confirmation strong { display: block; margin-top: 10px; color: var(--signal-color); font: 15px var(--instrument-font); white-space: nowrap; }
@@ -200,7 +200,7 @@
 .section-list strong { font-size: 14px; font-weight: 550; line-height: 1.35; }
 .section-list small { color: var(--suit-muted); font-size: 11px; line-height: 1.5; }
 
-.discovery-panel { top: 80px; right: 36px; bottom: 86px; width: min(480px, calc(100% - 72px)); padding: 36px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 260ms ease-out; }
+.discovery-panel { top: 80px; right: 36px; bottom: 86px; width: min(480px, calc(100% - 72px)); padding: 36px; overflow-y: auto; overscroll-behavior: contain; animation: panel-enter 140ms ease-out; }
 .panel-close { position: absolute; top: 20px; right: 20px; }
 .panel-eyebrow { margin: 0 0 32px; padding-right: 24px; }
 .panel-signal { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; color: var(--accent); font: 9px/1.7 var(--instrument-font); }
@@ -258,7 +258,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .space-app *, .space-app *::before, .space-app *::after { transition: none !important; animation-duration: 1ms !important; animation-delay: 0ms !important; }
-  .discovery-confirmation { animation: none; opacity: 1; }
+  .discovery-confirmation { opacity: 1; }
   .space-app .boot-text { width: var(--boot-text-width); animation: none !important; }
   .space-app .boot-cursor { animation: none !important; }
   .space-app.is-ready :is(.darkness, .boot-title) { animation-delay: 2s !important; animation-duration: 200ms !important; }

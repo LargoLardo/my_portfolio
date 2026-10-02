@@ -17,7 +17,7 @@ const RECORD_TRACK_CONFIG_URL = '/record-player-tracks.json'
 const CONTROLS_HINT_DURATION_MS = 8000
 const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
-const SCOPE_AUTO_OPEN_DURATION = 1.7
+const SCOPE_AUTO_OPEN_DURATION = 0.85
 const MUSIC_FADE_SECONDS = 5
 const UPLINK_MESSAGE = 'ESTABLISHING UPLINK'
 const RECORD_X = 1.7
@@ -593,7 +593,6 @@ export default function App() {
   const [completedDiscovery, setCompletedDiscovery] = useState(null)
   const [discoveredIds, setDiscoveredIds] = useState(new Set())
   const [planetPortraits, setPlanetPortraits] = useState({})
-  const pendingRevealRef = useRef(null)
   const [focusedTarget, setFocusedTarget] = useState(null)
   const [activeDiscovery, setActiveDiscovery] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -646,7 +645,6 @@ export default function App() {
 
   const revealDiscovery = useCallback((id) => {
     if (!id) return
-    pendingRevealRef.current = null
     setCompletedDiscovery(null)
     markDiscovered(id)
     setActiveDiscovery(id)
@@ -1509,14 +1507,10 @@ export default function App() {
     }
 
     const updateScopeAutoOpen = (id, dt) => {
-      if (pendingRevealRef.current) {
-        pendingRevealRef.current.remaining -= dt
-        if (pendingRevealRef.current.remaining <= 0) revealDiscovery(pendingRevealRef.current.id)
-      }
       if (!scopeActiveRef.current) {
         resetScopeHold()
       } else if (!id) {
-        if (scopeAutoOpenedTarget && !pendingRevealRef.current) resetScopeHold()
+        if (scopeAutoOpenedTarget) resetScopeHold()
         scopeLostTime += dt
         if (scopeLostTime > 0.2) scopeHoldElapsed = Math.max(0, scopeHoldElapsed - dt * 1.5)
         if (scopeHoldElapsed === 0) resetScopeHold()
@@ -1531,9 +1525,8 @@ export default function App() {
           scopeHoldElapsed = Math.min(SCOPE_AUTO_OPEN_DURATION, scopeHoldElapsed + dt)
           if (scopeHoldElapsed >= SCOPE_AUTO_OPEN_DURATION) {
             scopeAutoOpenedTarget = id
-            markDiscovered(id)
+            revealDiscovery(id)
             setCompletedDiscovery(id)
-            pendingRevealRef.current = { id, remaining: reducedMotion ? 0.2 : 1.05 }
           }
         }
       }
@@ -1708,7 +1701,6 @@ export default function App() {
       if (mount.inert) return
       if (event.repeat) return
       if (event.code === 'Escape') {
-        pendingRevealRef.current = null
         setCompletedDiscovery(null)
         resetScopeHold()
         setActiveDiscovery(null)
@@ -1742,7 +1734,6 @@ export default function App() {
     }
 
     const onBlur = () => {
-      pendingRevealRef.current = null
       setCompletedDiscovery(null)
       pressed.clear()
       velocity.set(0, 0, 0)
@@ -1892,7 +1883,7 @@ export default function App() {
 
       // Preserve enough horizontal view to include the camp and planets in portrait.
       const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 9))
+      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 18))
       camera.updateProjectionMatrix()
 
       stars.position.copy(camera.position)
@@ -2041,7 +2032,7 @@ export default function App() {
       }
       disposeScene(scene, renderer)
     }
-  }, [markDiscovered, revealDiscovery, setScopeActive])
+  }, [revealDiscovery, setScopeActive])
 
   return (
     <main
@@ -2076,7 +2067,6 @@ export default function App() {
           aria-controls="field-log"
           aria-expanded={sidebarOpen}
           onClick={() => {
-            pendingRevealRef.current = null
             setCompletedDiscovery(null)
             setActiveDiscovery(null)
             setSignPanelOpen(false)
@@ -2105,7 +2095,7 @@ export default function App() {
       </div>
 
       {completedDiscovery && (
-        <div key={completedDiscovery} className="discovery-confirmation" role="status" style={{ '--signal-color': DISCOVERY_BY_ID[completedDiscovery].color }}>
+        <div key={completedDiscovery} className="discovery-confirmation" role="status" style={{ '--signal-color': DISCOVERY_BY_ID[completedDiscovery].color }} onAnimationEnd={() => setCompletedDiscovery(null)}>
           <span>Signal located</span><strong>{DISCOVERY_BY_ID[completedDiscovery].world}</strong>
         </div>
       )}
