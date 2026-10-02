@@ -134,7 +134,7 @@
 .scope-crosshair::before { top: 12px; left: 0; width: 26px; height: 1px; }
 .scope-crosshair::after { top: 0; left: 12px; width: 1px; height: 26px; }
 .signal-readout {
-  position: absolute; bottom: 112px; left: 50%; z-index: 7;
+  position: absolute; bottom: 140px; left: 50%; z-index: 7;
   display: flex; align-items: center; gap: 14px;
   transform: translateX(-50%); padding: 12px 18px;
   border: 1px solid var(--suit-line); border-radius: 3px; background: #10191deb;
@@ -246,7 +246,7 @@
   .sections-button { top: 14px; }
   .mute-button { top: 14px; left: 18px; font-size: 10px; }
   .scope-button { bottom: 14px; }
-  .signal-readout { bottom: 100px; max-width: calc(100% - 44px); font-size: 10px; }
+  .signal-readout { bottom: 128px; max-width: calc(100% - 44px); font-size: 10px; }
   .section-sidebar-header strong { font-size: 25px; }
   .panel-close { top: 16px; right: 16px; }
   .panel-eyebrow { font-size: 8px; }
