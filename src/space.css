@@ -6,7 +6,7 @@
   --instrument-font: 'Departure Mono', ui-monospace, monospace;
   --boot-start: 300ms;
   --boot-type: 1140ms;
-  --boot-hold: 2000ms;
+  --boot-hold: 500ms;
   --boot-erase: 570ms;
   --boot-delete-at: calc(var(--boot-start) + var(--boot-type) + var(--boot-hold));
   --boot-reveal-at: calc(var(--boot-delete-at) + var(--boot-erase));
@@ -49,7 +49,7 @@
   animation: boot-type var(--boot-type) steps(var(--boot-characters), end) var(--boot-start) forwards,
     boot-erase var(--boot-erase) steps(var(--boot-characters), end) var(--boot-delete-at) forwards;
 }
-.is-ready .boot-cursor { animation: boot-blink 500ms step-end calc(var(--boot-start) + var(--boot-type)) 4; }
+.is-ready .boot-cursor { animation: boot-blink var(--boot-hold) step-end calc(var(--boot-start) + var(--boot-type)); }
 .is-ready .boot-title { animation: boot-fade 180ms ease var(--boot-reveal-at) forwards; }
 .vignette {
   z-index: 2;
@@ -261,5 +261,5 @@
   .discovery-confirmation { opacity: 1; }
   .space-app .boot-text { width: var(--boot-text-width); animation: none !important; }
   .space-app .boot-cursor { animation: none !important; }
-  .space-app.is-ready :is(.darkness, .boot-title) { animation-delay: 2s !important; animation-duration: 200ms !important; }
+  .space-app.is-ready :is(.darkness, .boot-title) { animation-delay: var(--boot-hold) !important; animation-duration: 200ms !important; }
 }
