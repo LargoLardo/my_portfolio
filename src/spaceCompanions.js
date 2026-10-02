@@ -76,8 +76,8 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     const texture = new THREE.CanvasTexture(makePlanetTexture(palette, seed, { ...style, craterData: geometry.userData.craters }, 512, 256))
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
-    material.color.setScalar(surface === 'rainbow' ? 1.65 : 1.4)
-    material.emissiveIntensity = surface === 'rainbow' ? 1.2 : 0.72
+    material.color.setScalar(1.4)
+    material.emissiveIntensity = 0.72
     material.bumpScale = moonRadius * (surface === 'rainbow' ? 0.007 : surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
     material.userData.detail.value = surface === 'rainbow' ? 0.2 : surface === 'lunar' ? 0.6 : 1
     const mesh = new THREE.Mesh(geometry, material)
@@ -95,7 +95,7 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 4), 4))
       sparkles = new THREE.Points(geometry, register(new THREE.PointsMaterial({
-        map: particleTexture, size: moonRadius * 0.2, opacity: 0.85, vertexColors: true,
+        map: particleTexture, size: moonRadius * 0.32, opacity: 1, vertexColors: true,
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
       })))
       sparkles.name = 'rainbow-sparkles'
@@ -206,11 +206,11 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
         moonPosition(moon, age, moon.mesh.position)
         if (!reducedMotion) moon.mesh.rotation.y += dt * moon.spin
         if (moon.surface === 'rainbow') {
-          moon.mesh.material.userData.hueShift.value = age * TAU / 24
+          moon.mesh.material.userData.rainbowTime.value = age
           const colors = moon.sparkles.geometry.attributes.color
           for (let i = 0; i < colors.count; i++) {
-            sparkleColor.setHSL((age / 24 + i * 0.073) % 1, 0.25, 0.84)
-            const pulse = (0.5 + 0.5 * Math.sin(age * 2.6 + i * 2.399963 + moon.phase)) ** 10
+            sparkleColor.setHSL((age / 6 + i * 0.073) % 1, 0.32, 0.9)
+            const pulse = (0.5 + 0.5 * Math.sin(age * 3.2 + i * 2.399963 + moon.phase)) ** 4
             colors.setXYZW(i, sparkleColor.r, sparkleColor.g, sparkleColor.b, 0.04 + pulse * 0.96)
           }
           colors.needsUpdate = true

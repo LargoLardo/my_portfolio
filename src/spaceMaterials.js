@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 
 export function skyElevationBrightness(heightFraction) {
-  return 0.6 + 0.4 * THREE.MathUtils.smoothstep(heightFraction, 0, 1)
+  return 0.2 + 0.8 * THREE.MathUtils.smoothstep(heightFraction, 0, 1)
 }
 
-// Fade the finished color so 60% brightness stays 60% after tone mapping.
+// Fade the finished color so the brightness ratio survives tone mapping.
 export function withSkyBrightness(material, brightness) {
   const compile = material.onBeforeCompile, key = material.customProgramCacheKey()
   material.userData.skyBrightness = brightness
@@ -195,13 +195,13 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
     vertexColors: !style.bands && style.craters !== false,
     roughness: style.surface === 'ice' ? 0.42 : 0.94, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.025, fog: false,
   })
-  const detail = { value: 0 }, hueShift = { value: 0 }
+  const detail = { value: 0 }, rainbowTime = { value: 0 }
   material.userData.detail = detail
-  material.userData.hueShift = hueShift
+  material.userData.rainbowTime = rainbowTime
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, {
       orbitDetail: detail, surfaceSeed: { value: seed }, banded: { value: style.bands ? 1 : 0 },
-      fractured: { value: style.cracked ? 1 : 0 }, surfaceHue: hueShift,
+      fractured: { value: style.cracked ? 1 : 0 }, rainbow: { value: style.surface === 'rainbow' ? 1 : 0 }, rainbowTime,
     })
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPlanetNormal; varying vec3 vPlanetPoint;')
@@ -211,15 +211,23 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vPlanetNormal; varying vec3 vPlanetPoint;
-        uniform float orbitDetail, surfaceSeed, banded, fractured, surfaceHue;
-        vec3 shiftSurfaceHue(vec3 color) {
+        uniform float orbitDetail, surfaceSeed, banded, fractured, rainbow, rainbowTime;
+        vec3 shiftSurfaceHue(vec3 color, float hue) {
           vec3 axis = normalize(vec3(1.0));
-          float c = cos(surfaceHue), s = sin(surfaceHue);
+          float c = cos(hue), s = sin(hue);
           return max(vec3(0.0), color * c + cross(axis, color) * s + axis * dot(axis, color) * (1.0 - c));
         }
         ${planetNoise}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 surfacePoint = normalize(vPlanetPoint);
+        float surfaceHue = 0.0;
+        if (rainbow > 0.5) {
+          // Broad, surface-attached regions pulse out of phase on two rhythms.
+          float region = planetNoise(surfacePoint * 3.0 + surfaceSeed);
+          float accent = planetNoise(surfacePoint * 5.0 - surfaceSeed);
+          surfaceHue = sin(rainbowTime * 1.4 + region * 6.283185) * 2.7
+            + sin(rainbowTime * 0.85 + accent * 6.283185) * 1.2;
+        }
         float turbulence = planetFbm(surfacePoint * 18.0 + surfaceSeed);
         float ridges = pow(1.0 - abs(planetFbm(surfacePoint * 65.0 + turbulence * 3.0) * 2.0 - 1.0), 3.0);
         float grain = planetNoise(surfacePoint * 240.0 + surfaceSeed);
@@ -227,7 +235,7 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
         float fissure = 1.0 - smoothstep(0.025, 0.09, abs(turbulence - 0.5));
         float relief = mix(ridges * 0.7 + grain * 0.3 - fissure * fractured * 0.4, bands * 0.6 + turbulence * 0.4, banded);
         float surfaceTint = mix(1.0, 0.72 + relief * 0.55, orbitDetail);
-        diffuseColor.rgb = shiftSurfaceHue(diffuseColor.rgb) * surfaceTint;`)
+        diffuseColor.rgb = shiftSurfaceHue(diffuseColor.rgb, surfaceHue) * surfaceTint;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         float height = relief * orbitDetail * mix(0.045, 0.006, banded);
         normal = perturbNormalArb(-vViewPosition, normal, vec2(dFdx(height), dFdy(height)), faceDirection);`)
@@ -236,7 +244,7 @@ export function makePlanetSurfaceMaterial(texture, seed, style) {
           totalEmissiveRadiance *= vColor.rgb;
         #endif
         float daylight = max(dot(normalize(vPlanetNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
-        totalEmissiveRadiance = shiftSurfaceHue(totalEmissiveRadiance) * surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
+        totalEmissiveRadiance = shiftSurfaceHue(totalEmissiveRadiance, surfaceHue) * surfaceTint * (mix(0.06, 0.14, orbitDetail) + 0.94 * daylight);`)
   }
   return material
 }
