@@ -78,7 +78,7 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)
-    material.emissiveIntensity = surface === 'rainbow' ? 1.92 : 0.72
+    material.emissiveIntensity = surface === 'rainbow' ? 1.632 : 0.72
     material.bumpScale = moonRadius * (surface === 'rainbow' || surface === 'ice' || surface === 'lunar' ? 0.025 : surface === 'basalt' ? 0.045 : 0.1)
     material.userData.detail.value = surface === 'lunar' ? 0.6 : 1
     const mesh = new THREE.Mesh(geometry, material)

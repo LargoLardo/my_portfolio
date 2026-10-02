@@ -114,7 +114,7 @@ for (const [roll, surface] of [[0.1, 'lunar'], [0.2, 'sulfur'], [0.275, 'rainbow
   system.update(1, 1, false)
   if (surface === 'rainbow') {
     assert.equal(material.userData.rainbowTime.value, 2, 'Color pulses advance with active animation time')
-    assert.equal(material.emissiveIntensity, 1.92, 'Rainbow glow is 20% softer than the full neon setting')
+    assert.equal(material.emissiveIntensity, 1.632, 'Rainbow glow includes the additional 15% reduction')
     assert.equal(material.color.r, 1.4)
     assert.notDeepEqual(moon.sparkles.geometry.attributes.color.array, sparkleColors, 'Surface glints should shimmer')
     const { position: positions, color: colors } = moon.sparkles.geometry.attributes
