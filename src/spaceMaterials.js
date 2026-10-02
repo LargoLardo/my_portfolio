@@ -40,7 +40,7 @@ function fractal(x, y, z, seed) {
 }
 
 export function makeDirtTexture(size = 512) {
-  const canvas = document.createElement('canvas')
+  const canvas = typeof document === 'undefined' ? new OffscreenCanvas(size, size) : document.createElement('canvas')
   canvas.width = canvas.height = size
   const context = canvas.getContext('2d')
   const image = context.createImageData(size, size)
@@ -73,13 +73,14 @@ export function makeDirtTexture(size = 512) {
 }
 
 export function makePlanetTexture(palette, seed, style = {}, width = 512, height = 256) {
-  const canvas = document.createElement('canvas')
+  const canvas = typeof document === 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const context = canvas.getContext('2d')
   const image = context.createImageData(width, height)
   const colors = palette.map(value => new THREE.Color(value).convertLinearToSRGB())
   const color = new THREE.Color()
+  const craters = (style.craterData ?? []).map(crater => ({ ...crater, cutoff: Math.cos(crater.span * 2.4) }))
   for (let y = 0; y < height; y += 1) {
     const latitude = (y / height - 0.5) * Math.PI
     for (let x = 0; x < width; x += 1) {
@@ -112,10 +113,10 @@ export function makePlanetTexture(palette, seed, style = {}, width = 512, height
       const index = Math.floor(stop)
       color.copy(colors[index]).lerp(colors[index + 1], stop - index)
       let grain = style.surface === 'rainbow' ? 0.8 + detail * 0.4 : 0.94 + detail * 0.12
-      for (const crater of style.craterData ?? []) {
+      for (const crater of craters) {
         // Match SphereGeometry's UV orientation so rims follow the actual relief.
         const dot = -nx * crater.normal.x - ny * crater.normal.y + nz * crater.normal.z
-        if (dot < Math.cos(crater.span * 2.4)) continue
+        if (dot < crater.cutoff) continue
         const d = Math.sqrt(Math.max(0, 2 - 2 * dot)) / crater.span
         const bowl = 1 - THREE.MathUtils.smoothstep(d, 0.2, 0.8)
         const rim = Math.exp(-(((d - 0.85) / 0.09) ** 2))
@@ -145,7 +146,7 @@ export function makePlanetGeometry(radius, seed, style = {}, widthSegments = 128
     const size = hash(i, 2, 0, seed)
     const span = lunar ? 0.035 + size * 0.15 : i === 0 ? 0.31 + size * 0.07 : 0.05 + size ** 1.4 * 0.26
     if (craters.some(crater => crater.normal.angleTo(normal) < crater.span + span + 0.035)) continue
-    craters.push({ normal, span, depth: radius * (lunar ? 0.006 + span * 0.1 : 0.01 + span * 0.14) })
+    craters.push({ normal, span, cutoff: Math.cos(span * 1.15), depth: radius * (lunar ? 0.006 + span * 0.1 : 0.01 + span * 0.14) })
   }
   const positions = geometry.attributes.position
   const colors = new Float32Array(positions.count * 3)
@@ -153,6 +154,7 @@ export function makePlanetGeometry(radius, seed, style = {}, widthSegments = 128
     point.fromBufferAttribute(positions, i).normalize()
     let height = 0, tint = 1
     for (const crater of craters) {
+      if (point.dot(crater.normal) < crater.cutoff) continue
       const d = point.angleTo(crater.normal) / crater.span
       if (d >= 1.15) continue
       const bowl = -crater.depth * Math.max(0, 1 - (d / 0.79) ** 2) ** 2

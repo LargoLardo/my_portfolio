@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
+import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
+import { createSpaceTextures } from './spaceTextures.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
 import { createPlanetCompanions, rollSystemCompanions, companionOpacity } from './spaceCompanions.js'
@@ -603,7 +604,8 @@ export default function App() {
   const [discoveryClosing, setDiscoveryClosing] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sceneReady, setSceneReady] = useState(false)
-  const [ignited, setIgnited] = useState(false)
+  const [introFinished, setIntroFinished] = useState(false)
+  const ignited = sceneReady && introFinished
   const [readSignAvailable, setReadSignAvailable] = useState(false)
   const readSignAvailableRef = useRef(false)
   const [signPanelOpen, setSignPanelOpen] = useState(false)
@@ -661,6 +663,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const timer = setTimeout(() => setIntroFinished(true), reducedMotion ? 500 : 2510)
+    return () => clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
     if (signPanelOpen) helpCloseRef.current?.focus({ preventScroll: true })
   }, [signPanelOpen])
 
@@ -696,6 +704,8 @@ export default function App() {
     renderer.shadowMap.type = THREE.PCFShadowMap
     mount.appendChild(renderer.domElement)
 
+    const textures = createSpaceTextures()
+    let cancelled = false
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x000102)
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
@@ -711,7 +721,7 @@ export default function App() {
     const particleTexture = makeParticleTexture()
 
     const dirtMaterial = new THREE.MeshStandardMaterial({
-      map: new THREE.CanvasTexture(makeDirtTexture()),
+      map: textures.dirt(),
       color: 0xb1a390,
       roughness: 1,
       metalness: 0,
@@ -748,7 +758,6 @@ export default function App() {
     ground.receiveShadow = true
     scene.add(ground)
 
-    const rocks = new THREE.Group()
     const rockGeometry = mergeVertices(new THREE.IcosahedronGeometry(0.24, 2))
     const rockVertices = rockGeometry.attributes.position
     for (let i = 0; i < rockVertices.count; i += 1) {
@@ -759,6 +768,8 @@ export default function App() {
     rockGeometry.computeVertexNormals()
     const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x928878, map: dirtMaterial.map, bumpMap: dirtMaterial.map, bumpScale: 0.028, roughness: 1 })
     const rockRand = seededRandom(244)
+    const rocks = new THREE.InstancedMesh(rockGeometry, rockMaterial, 100)
+    const instance = new THREE.Object3D()
 
     for (let i = 0; i < 100; i += 1) {
       const angle = rockRand() * Math.PI * 2
@@ -766,21 +777,21 @@ export default function App() {
       const x = Math.cos(angle) * radius
       const z = Math.sin(angle) * radius
 
-      const rock = new THREE.Mesh(rockGeometry, rockMaterial)
+      const rock = instance
       const scale = 0.5 + rockRand() ** 2 * 2.8
       rock.position.set(x, terrainHeight(x, z) + scale * 0.12, z)
       rock.rotation.set(rockRand() * Math.PI, rockRand() * Math.PI, rockRand() * Math.PI)
       rock.scale.set(scale * 1.25, scale * 0.7, scale)
-      rock.castShadow = true
-      rock.receiveShadow = true
-      rocks.add(rock)
+      rock.updateMatrix()
+      rocks.setMatrixAt(i, rock.matrix)
     }
 
+    rocks.castShadow = true
+    rocks.receiveShadow = true
     scene.add(rocks)
 
     // Instanced gravel and dry grass keep the campsite detailed with two draw calls.
     const gravel = new THREE.InstancedMesh(rockGeometry, rockMaterial, 460)
-    const instance = new THREE.Object3D()
     const instanceColor = new THREE.Color()
     for (let i = 0; i < gravel.count; i += 1) {
       const angle = rockRand() * Math.PI * 2
@@ -1135,6 +1146,7 @@ export default function App() {
       phonograph.updateWorldMatrix(true, true)
 
       recordDisc = phonograph.getObjectByName('record_2')
+      fireLight.shadow.needsUpdate = true
     })
 
     let recordTracks = DEFAULT_RECORD_TRACKS
@@ -1236,6 +1248,10 @@ export default function App() {
     fireLight.shadow.mapSize.set(1024, 1024)
     fireLight.shadow.bias = -0.0005
     fireLight.shadow.normalBias = 0.045
+    // The light and shadow-casting camp geometry are stationary. Intensity can
+    // still flicker without rendering six identical shadow maps every frame.
+    fireLight.shadow.autoUpdate = false
+    fireLight.shadow.needsUpdate = true
     campfire.add(fireLight)
 
     const lowGlow = new THREE.PointLight(0xff3b18, 0, 4.2, 2)
@@ -1296,7 +1312,7 @@ export default function App() {
     DISCOVERIES.forEach((discovery, index) => {
       const skyBrightness = { value: 1 }
       const geometry = makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle)
-      const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, { ...discovery.planetStyle, craterData: geometry.userData.craters }))
+      const planetTexture = textures.planet(discovery.palette, index + 10, { ...discovery.planetStyle, craterData: geometry.userData.craters })
       planetTexture.colorSpace = THREE.SRGBColorSpace
       planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
       const planet = new THREE.Mesh(
@@ -1349,8 +1365,7 @@ export default function App() {
         skyGroup.add(decorRing)
       }
       planetDecorRings.push(decorRing)
-      portraits[discovery.id] = makePlanetPortrait(renderer, planet, decorRing, camera.position)
-      const companions = createPlanetCompanions(discovery, particleTexture, companionConfigs[index])
+      const companions = createPlanetCompanions(discovery, particleTexture, companionConfigs[index], Math.random, textures.planet)
       companions.group.position.copy(planet.position)
       skyGroup.add(companions.group)
       planet.userData.companions = companions
@@ -1445,30 +1460,6 @@ export default function App() {
 
     const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
     const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
-    // Upload every companion's geometry, textures and shaders behind the intro.
-    // A tiny offscreen render also prepares planets outside the camera's view.
-    const preloadTarget = new THREE.WebGLRenderTarget(1, 1)
-    const companionCulling = new Map()
-    planetMeshes.forEach(planet => {
-      const companions = planet.userData.companions
-      companions.update(0, 1, reducedMotion)
-      companions.group.traverse(object => {
-        companionCulling.set(object, object.frustumCulled)
-        object.frustumCulled = false
-      })
-    })
-    // Warm both lighting variants: firelight near camp and sunlight in orbit.
-    for (const campVisible of [false, true]) {
-      campObjects.forEach(object => { object.visible = campVisible })
-      renderer.setRenderTarget(preloadTarget)
-      renderer.render(scene, camera)
-      renderer.setRenderTarget(null)
-      renderer.compile(skyGroup, camera, scene)
-    }
-    preloadTarget.dispose()
-    companionCulling.forEach((culled, object) => { object.frustumCulled = culled })
-    planetMeshes.forEach(planet => planet.userData.companions.update(0, 0, reducedMotion))
-
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
     const anchorNormal = new THREE.Vector3()
@@ -1496,6 +1487,13 @@ export default function App() {
     }
     const touchPoints = new Map()
     let pinchDistance = 0, gestureScale = null
+    const touchCenter = new THREE.Vector2()
+    const nextTouchCenter = new THREE.Vector2()
+    const getTouchCenter = out => {
+      out.set(0, 0)
+      touchPoints.forEach(point => { out.x += point.x; out.y += point.y })
+      return out.divideScalar(touchPoints.size || 1)
+    }
     const touchDistance = () => {
       const [a, b] = touchPoints.values()
       return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
@@ -1678,6 +1676,7 @@ export default function App() {
         touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
         if (touchPoints.size > 1) {
           pinchDistance = touchDistance()
+          getTouchCenter(touchCenter)
           drag.active = false
           drag.pointerId = null
           return
@@ -1695,7 +1694,16 @@ export default function App() {
         touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
         if (touchPoints.size > 1) {
           const nextDistance = touchDistance()
-          if (pinchDistance > 0 && nextDistance > 0) orbit.zoom(pinchDistance / nextDistance)
+          if (orbit.active) {
+            if (pinchDistance > 0 && nextDistance > 0) orbit.zoom(pinchDistance / nextDistance)
+          } else if (!orbitTargetRef.current) {
+            getTouchCenter(nextTouchCenter)
+            const sensitivity = scopeActiveRef.current ? 0.006 : 0.014
+            camera.position.addScaledVector(right, (touchCenter.x - nextTouchCenter.x) * sensitivity)
+            camera.position.addScaledVector(forward, (touchCenter.y - nextTouchCenter.y) * sensitivity)
+            clampPlayer()
+            touchCenter.copy(nextTouchCenter)
+          }
           pinchDistance = nextDistance
           return
         }
@@ -1727,6 +1735,7 @@ export default function App() {
       if (mount.hasPointerCapture(event.pointerId)) mount.releasePointerCapture(event.pointerId)
       if (touchPoints.delete(event.pointerId) && touchPoints.size) {
         pinchDistance = touchDistance()
+        getTouchCenter(touchCenter)
         const [pointerId, point] = touchPoints.entries().next().value
         drag.active = touchPoints.size === 1
         drag.pointerId = pointerId
@@ -2046,10 +2055,14 @@ export default function App() {
       burstGeometry.attributes.color.needsUpdate = burstParticlesChanged
       burstParticles.material.opacity = THREE.MathUtils.lerp(burstParticles.material.opacity, activeBurstParticles ? 1 : 0, 1 - Math.exp(-dt * 5))
 
-      raycaster.setFromCamera(center, camera)
-      const hits = raycaster.intersectObjects(planetMeshes, false)
-      const focusedHit = hits.find(({ object }) => scopeActiveRef.current || object.userData.discovered)
-      let focusedId = focusedHit?.object.userData.discoveryId ?? null
+      // Scanning already uses angular bounds below; avoid intersecting every
+      // crater triangle each frame, especially while flying past a planet.
+      let focusedId = null
+      if (!orbit.active && !scopeActiveRef.current) {
+        raycaster.setFromCamera(center, camera)
+        const candidates = planetMeshes.filter(planet => planet.userData.discovered)
+        focusedId = raycaster.intersectObjects(candidates, false)[0]?.object.userData.discoveryId ?? null
+      }
       let proximity = 0
 
       if (scopeActiveRef.current) {
@@ -2177,9 +2190,45 @@ export default function App() {
     }
 
     clampPlayer()
-    raf = requestAnimationFrame(tick)
+    const prepareScene = async () => {
+      await textures.ready()
+      if (cancelled) return
+      for (let index = 0; index < planetMeshes.length; index++) {
+        portraits[DISCOVERIES[index].id] = makePlanetPortrait(renderer, planetMeshes[index], planetDecorRings[index], camera.position)
+        await new Promise(resolve => setTimeout(resolve, 0))
+        if (cancelled) return
+      }
+      // Upload every companion's geometry, textures and shaders behind the intro.
+      // A tiny offscreen render also prepares planets outside the camera's view.
+      const preloadTarget = new THREE.WebGLRenderTarget(1, 1)
+      const companionCulling = new Map()
+      planetMeshes.forEach(planet => {
+        const companions = planet.userData.companions
+        companions.update(0, 1, reducedMotion)
+        companions.group.traverse(object => {
+          companionCulling.set(object, object.frustumCulled)
+          object.frustumCulled = false
+        })
+      })
+      // Warm both lighting variants: firelight near camp and sunlight in orbit.
+      for (const campVisible of [false, true]) {
+        campObjects.forEach(object => { object.visible = campVisible })
+        await renderer.compileAsync(scene, camera)
+        if (cancelled) { preloadTarget.dispose(); return }
+        renderer.setRenderTarget(preloadTarget)
+        renderer.render(scene, camera)
+        renderer.setRenderTarget(null)
+      }
+      preloadTarget.dispose()
+      companionCulling.forEach((culled, object) => { object.frustumCulled = culled })
+      planetMeshes.forEach(planet => planet.userData.companions.update(0, 0, reducedMotion))
+      raf = requestAnimationFrame(tick)
+    }
+    prepareScene()
 
     return () => {
+      cancelled = true
+      textures.dispose()
       cancelAnimationFrame(raf)
       phonographLoadCancelled = true
       audioCancelled = true
@@ -2227,9 +2276,7 @@ export default function App() {
     >
       <div ref={mountRef} className="scene-mount" inert={!ignited} tabIndex={0} role="region" aria-label={orbitPhase === 'ground' ? 'Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard.' : 'Planetary orbit. Drag or use arrow keys to orbit. Press Escape to return to camp.'} />
 
-      <div className="darkness" aria-hidden="true" onAnimationEnd={(event) => {
-        if (event.animationName === 'darkness-ignition') setIgnited(true)
-      }} />
+      <div className="darkness" aria-hidden="true" />
       <div className="boot-title" aria-hidden="true" style={{ '--boot-characters': UPLINK_MESSAGE.length }}>
         <span className="boot-text">{UPLINK_MESSAGE}</span><span className="boot-cursor" />
       </div>
@@ -2302,7 +2349,7 @@ export default function App() {
         </button>
         <span className="panel-eyebrow">FIELD MANUAL / 01</span>
         <h2>A little curiosity goes a long way.</h2>
-        <p>Drag to look around. Use WASD or arrow keys to walk around the campfire.</p>
+        <p>Drag to look around. Use WASD or arrow keys to walk around the campfire. On touch screens, drag with two fingers to walk.</p>
         <p>Hold Space or the right mouse button to scan. On touch screens, tap Signalscope, then drag to aim.</p>
         <p>Keep a planet in the center of the scope to travel into orbit. Drag or use arrow keys to explore, then close the analysis to return to camp. Field log takes you directly to any destination.</p>
         <p>Click the phonograph to change the music. Press Escape to close a panel.</p>

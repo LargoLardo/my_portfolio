@@ -46,7 +46,7 @@ export function companionOpacity(distance, arrivalDistance) {
   return 1 - THREE.MathUtils.smoothstep(distance, arrivalDistance * 1.2, arrivalDistance * 2.8)
 }
 
-export function createPlanetCompanions(discovery, particleTexture, config, random = Math.random) {
+export function createPlanetCompanions(discovery, particleTexture, config, random = Math.random, createTexture = (...args) => new THREE.CanvasTexture(makePlanetTexture(...args))) {
   const radius = discovery.radius
   const planetClearance = radius * (discovery.planetStyle.rings ? 2.25 : 1.15)
   const group = new THREE.Group()
@@ -82,7 +82,7 @@ export function createPlanetCompanions(discovery, particleTexture, config, rando
     const seed = Math.floor(random() * 100000)
     const geometry = makePlanetGeometry(moonRadius, seed, style, surface === 'lunar' ? 96 : 64, 64)
     const palette = VARIANT_PALETTES[surface] ?? MOON_PALETTES[(paletteOffset + i) % MOON_PALETTES.length]
-    const texture = new THREE.CanvasTexture(makePlanetTexture(palette, seed, { ...style, craterData: geometry.userData.craters }, 512, 256))
+    const texture = createTexture(palette, seed, { ...style, craterData: geometry.userData.craters }, 512, 256)
     texture.colorSpace = THREE.SRGBColorSpace
     const material = register(makePlanetSurfaceMaterial(texture, seed, style))
     material.color.setScalar(1.4)

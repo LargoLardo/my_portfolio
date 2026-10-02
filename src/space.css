@@ -12,7 +12,7 @@
   --boot-reveal-at: calc(var(--boot-delete-at) + var(--boot-erase));
   position: relative;
   width: 100%;
-  height: 100%;
+  height: 100dvh;
   overflow: hidden;
   isolation: isolate;
   background: #030609;
@@ -20,16 +20,16 @@
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
-.scene-mount { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.scene-mount { position: absolute; inset: 0; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .scene-mount:active { cursor: grabbing; }
-.space-app button, .space-app a { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.space-app button, .space-app a { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .space-app :focus-visible { outline: 2px solid var(--suit-amber); outline-offset: 5px; }
 .space-app .scene-mount:focus-visible { outline: none; }
 .space-app button { transition: background 160ms ease, border-color 160ms ease, color 160ms ease; }
 
 .darkness, .vignette { position: absolute; inset: 0; pointer-events: none; }
-.darkness { z-index: 30; background: #000; opacity: 1; pointer-events: auto; }
-.is-ready .darkness { animation: darkness-ignition 1.8s ease-in-out var(--boot-reveal-at) forwards; }
+.darkness { z-index: 30; background: #000; opacity: 1; }
+.is-lit .darkness { animation: darkness-ignition 1.8s ease-in-out forwards; }
 .boot-title {
   --boot-text-width: calc(var(--boot-characters) * (1ch + 0.2em));
   position: absolute;
@@ -45,12 +45,12 @@
 }
 .boot-text { display: block; width: 0; overflow: hidden; }
 .boot-cursor { flex: 0 0 0.8ch; height: 1.05em; background: currentColor; }
-.is-ready .boot-text {
+.boot-text {
   animation: boot-type var(--boot-type) steps(var(--boot-characters), end) var(--boot-start) forwards,
     boot-erase var(--boot-erase) steps(var(--boot-characters), end) var(--boot-delete-at) forwards;
 }
-.is-ready .boot-cursor { animation: boot-blink var(--boot-hold) step-end calc(var(--boot-start) + var(--boot-type)); }
-.is-ready .boot-title { animation: boot-fade 180ms ease var(--boot-reveal-at) forwards; }
+.boot-cursor { animation: boot-blink var(--boot-hold) step-end calc(var(--boot-start) + var(--boot-type)); }
+.boot-title { animation: boot-fade 180ms ease var(--boot-reveal-at) forwards; }
 .vignette {
   z-index: 2;
   background: radial-gradient(ellipse at 50% 44%, transparent 40%, rgba(2, 5, 7, 0.42) 100%),
@@ -245,7 +245,7 @@
   .sections-button, .scope-button { right: 18px; font-size: 10px; }
   .sections-button { top: 14px; }
   .mute-button { top: 14px; left: 18px; font-size: 10px; }
-  .scope-button { bottom: 14px; }
+  .scope-button { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   .signal-readout { bottom: 128px; max-width: calc(100% - 44px); font-size: 10px; }
   .section-sidebar-header strong { font-size: 25px; }
   .panel-close { top: 16px; right: 16px; }
@@ -264,5 +264,6 @@
   .discovery-confirmation { opacity: 1; }
   .space-app .boot-text { width: var(--boot-text-width); animation: none !important; }
   .space-app .boot-cursor { animation: none !important; }
-  .space-app.is-ready :is(.darkness, .boot-title) { animation-delay: var(--boot-hold) !important; animation-duration: 200ms !important; }
+  .space-app .boot-title { animation-delay: var(--boot-hold) !important; animation-duration: 200ms !important; }
+  .space-app.is-lit .darkness { animation-duration: 200ms !important; }
 }
