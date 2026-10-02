@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makeAtmosphereMaterial } from './spaceMaterials.js'
 
 const TAU = Math.PI * 2
-const RAINBOW_MOON_CHANCE = 0.5 // Temporarily raised from 0.05.
+const RAINBOW_MOON_CHANCE = 0.08
 const UP = new THREE.Vector3(0, 1, 0)
 const MOON_PALETTES = [
   ['#242b34', '#596575', '#a0adbb', '#d4d7d9'],
@@ -23,15 +23,21 @@ export function rollMoonSurface(random = Math.random) {
 
 export function rollPlanetCompanions(random = Math.random) {
   const roll = random()
-  return { moonCount: roll < 0.35 ? 1 : roll < 0.55 ? 2 : roll < 0.65 ? 3 : 0, ufo: random() < 0.1 }
+  return { moonCount: roll < 0.4 ? 1 : roll < 0.6 ? 2 : roll < 0.7 ? 3 : 0, ufo: random() < 0.1 }
 }
 
 export function rollSystemCompanions(count, random = Math.random) {
   const configs = Array.from({ length: count }, () => rollPlanetCompanions(random))
   const visitors = configs.filter(config => config.ufo)
-  if (!visitors.length && count) configs[Math.floor(random() * count)].ufo = true
-  while (visitors.length > 2) {
+  const visitorCount = Math.min(count, random() < 0.33 ? 2 : 1)
+  while (visitors.length > visitorCount) {
     visitors.splice(Math.floor(random() * visitors.length), 1)[0].ufo = false
+  }
+  const available = configs.filter(config => !config.ufo)
+  while (visitors.length < visitorCount) {
+    const visitor = available.splice(Math.floor(random() * available.length), 1)[0]
+    visitor.ufo = true
+    visitors.push(visitor)
   }
   return configs
 }

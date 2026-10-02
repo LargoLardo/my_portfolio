@@ -35,10 +35,10 @@ let seed = 7823
 const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296)
 const surfaces = { lunar: 0, sulfur: 0, rainbow: 0, null: 0 }
 for (let i = 0; i < 50000; i++) surfaces[rollMoonSurface(random)]++
-for (const [surface, probability] of Object.entries({ lunar: 0.125, sulfur: 0.125, rainbow: 0.5, null: 0.25 })) {
+for (const [surface, probability] of Object.entries({ lunar: 0.125, sulfur: 0.125, rainbow: 0.08, null: 0.67 })) {
   assert.ok(Math.abs(surfaces[surface] / 50000 - probability) < 0.008, `${surface} moon probability`)
 }
-for (const [roll, surface] of [[0, 'lunar'], [0.12499, 'lunar'], [0.125, 'sulfur'], [0.24999, 'sulfur'], [0.25, 'rainbow'], [0.74999, 'rainbow'], [0.75, null], [0.99999, null]]) {
+for (const [roll, surface] of [[0, 'lunar'], [0.12499, 'lunar'], [0.125, 'sulfur'], [0.24999, 'sulfur'], [0.25, 'rainbow'], [0.32999, 'rainbow'], [0.33, null], [0.99999, null]]) {
   assert.equal(rollMoonSurface(() => roll), surface)
 }
 const counts = [0, 0, 0, 0], ufos = [0, 0, 0, 0]
@@ -47,28 +47,32 @@ for (let i = 0; i < 50000; i++) {
   counts[config.moonCount]++
   ufos[config.moonCount] += Number(config.ufo)
 }
-for (const [i, probability] of [0.35, 0.35, 0.2, 0.1].entries()) {
+for (const [i, probability] of [0.3, 0.4, 0.2, 0.1].entries()) {
   assert.ok(Math.abs(counts[i] / 50000 - probability) < 0.012)
   assert.ok(Math.abs(ufos[i] / counts[i] - 0.1) < 0.015, 'UFO chance must be independent of moon count')
 }
-for (const [roll, expected] of [[0, 1], [0.3499, 1], [0.35, 2], [0.5499, 2], [0.55, 3], [0.6499, 3], [0.65, 0], [0.9999, 0]]) {
+for (const [roll, expected] of [[0, 1], [0.3999, 1], [0.4, 2], [0.5999, 2], [0.6, 3], [0.6999, 3], [0.7, 0], [0.9999, 0]]) {
   const rolls = [roll, 0.1]
   assert.deepEqual(rollPlanetCompanions(() => rolls.shift()), { moonCount: expected, ufo: false })
 }
 const hosts = Array(8).fill(0), fleetSizes = new Set()
+let secondUfos = 0
 for (let i = 0; i < 10000; i++) {
   const configs = rollSystemCompanions(8, random)
   const count = configs.filter(config => config.ufo).length
   assert.ok(count >= 1 && count <= 2, 'Each system must have one or two UFOs')
   fleetSizes.add(count)
+  secondUfos += Number(count === 2)
   configs.forEach((config, index) => { hosts[index] += Number(config.ufo) })
 }
 assert.deepEqual([...fleetSizes].sort(), [1, 2])
+assert.ok(Math.abs(secondUfos / 10000 - 0.33) < 0.015, 'The second UFO should appear in 33% of systems')
 assert.ok(Math.max(...hosts) / Math.min(...hosts) < 1.15, 'UFO hosts must not favor early planets')
 for (const [roll, expected] of [[0.9, 1], [0, 2]]) {
   assert.equal(rollSystemCompanions(8, () => roll).filter(config => config.ufo).length, expected)
 }
 assert.deepEqual(rollSystemCompanions(0), [])
+assert.equal(rollSystemCompanions(1, () => 0)[0].ufo, true, 'A single planet can host only the guaranteed UFO')
 let previousOpacity = 0
 for (let distance = 160; distance >= 40; distance--) {
   const opacity = companionOpacity(distance, 40)
