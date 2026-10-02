@@ -15,8 +15,21 @@ export function rollPlanetCompanions(random = Math.random) {
   return { moonCount: roll < 0.35 ? 1 : roll < 0.55 ? 2 : roll < 0.65 ? 3 : 0, ufo: random() < 0.1 }
 }
 
-export function createPlanetCompanions(discovery, particleTexture, random = Math.random) {
-  const config = rollPlanetCompanions(random)
+export function rollSystemCompanions(count, random = Math.random) {
+  const configs = Array.from({ length: count }, () => rollPlanetCompanions(random))
+  const visitors = configs.filter(config => config.ufo)
+  if (!visitors.length && count) configs[Math.floor(random() * count)].ufo = true
+  while (visitors.length > 2) {
+    visitors.splice(Math.floor(random() * visitors.length), 1)[0].ufo = false
+  }
+  return configs
+}
+
+export function companionOpacity(distance, arrivalDistance) {
+  return 1 - THREE.MathUtils.smoothstep(distance, arrivalDistance * 1.2, arrivalDistance * 2.8)
+}
+
+export function createPlanetCompanions(discovery, particleTexture, config, random = Math.random) {
   const radius = discovery.radius
   const planetClearance = radius * (discovery.planetStyle.rings ? 2.25 : 1.15)
   const group = new THREE.Group()
@@ -118,7 +131,7 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
 
   let trail = null
   const trailCount = 100, trailDuration = 2.6
-  let age = 0, fade = 0
+  let age = 0
   if (config.ufo) {
     const hullMaterial = register(new THREE.MeshStandardMaterial({ color: 0x677b75, emissive: 0x25352f, emissiveIntensity: 0.45, roughness: 0.36, metalness: 0.65, fog: false }))
     const profile = [[0, -0.23], [0.38, -0.21], [0.82, -0.1], [1, 0], [0.86, 0.12], [0.42, 0.22], [0, 0.22]].map(([x, y]) => new THREE.Vector2(x * shipRadius, y * shipRadius))
@@ -153,11 +166,10 @@ export function createPlanetCompanions(discovery, particleTexture, random = Math
 
   return {
     group, config, moons, craft, outerRadius,
-    update(dt, inspecting, reducedMotion) {
-      group.visible = inspecting && Boolean(moons.length || config.ufo)
-      if (!inspecting) { fade = 0; return }
-      fade = reducedMotion ? 1 : THREE.MathUtils.damp(fade, 1, 6, dt)
-      materials.forEach(material => { material.opacity = material.userData.baseOpacity * fade })
+    update(dt, opacity, reducedMotion) {
+      group.visible = opacity > 0 && Boolean(moons.length || config.ufo)
+      materials.forEach(material => { material.opacity = material.userData.baseOpacity * opacity })
+      if (dt === 0 && !group.visible) return
       if (!reducedMotion) age += dt
       moons.forEach(moon => {
         moonPosition(moon, age, moon.mesh.position)

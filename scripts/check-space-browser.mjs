@@ -45,6 +45,12 @@ try {
   await send('Page.enable')
   const probe = await send('Page.addScriptToEvaluateOnNewDocument', { source: `
     window.__spaceAudio = [];
+    window.__spaceGraphics = { scenes: [], renderer: null };
+    window.__THREE_DEVTOOLS__ = new EventTarget();
+    window.__THREE_DEVTOOLS__.addEventListener('observe', ({ detail }) => {
+      if (detail.isScene) window.__spaceGraphics.scenes.push(detail);
+      if (detail.isWebGLRenderer) window.__spaceGraphics.renderer = detail;
+    });
     window.Audio = new Proxy(window.Audio, {
       construct(Target, args) {
         const audio = new Target(...args);
@@ -68,6 +74,24 @@ try {
   await waitFor("document.querySelector('.space-app')?.classList.contains('is-lit')")
   await waitFor("document.querySelectorAll('.destination-portrait').length === 8 && [...document.querySelectorAll('.destination-portrait')].every(e => e.naturalWidth === 160)")
   assert.equal(await evaluate("new Set([...document.querySelectorAll('.destination-portrait')].map(e => e.src)).size"), 8)
+  const companions = await evaluate(`(() => {
+    const { scenes, renderer } = window.__spaceGraphics;
+    const planets = scenes.findLast(scene => scene.children.some(group => group.children.some(p => p.userData.companions)))
+      .children.flatMap(group => group.children).filter(p => p.userData.companions);
+    let prepared = true;
+    planets.forEach(planet => planet.userData.companions.group.traverse(object => {
+      if (object.material && !renderer.properties.get(object.material).currentProgram) prepared = false;
+      if (object.material?.map && !renderer.properties.get(object.material.map).__webglTexture) prepared = false;
+    }));
+    return {
+      count: planets.length, ufos: planets.filter(p => p.userData.companions.config.ufo).length,
+      hidden: planets.every(p => !p.userData.companions.group.visible), prepared,
+    };
+  })()`)
+  assert.equal(companions.count, 8)
+  assert.ok(companions.ufos >= 1 && companions.ufos <= 2, 'The scene must contain one or two UFOs')
+  assert.ok(companions.hidden, 'Companions must stay hidden at camp')
+  assert.ok(companions.prepared, 'Every companion shader and texture must be ready before the first flight')
   assert.equal(await evaluate("document.querySelectorAll('[data-discovered=true]').length"), 0)
   assert.equal(await evaluate("document.querySelector('.mute-button').closest('[inert]')"), null)
   assert.equal(await evaluate("document.querySelector('.mute-button').textContent.trim()"), '')

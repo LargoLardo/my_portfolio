@@ -237,7 +237,7 @@ export function makeRingTexture(seed) {
   const context = canvas.getContext('2d')
   for (let x = 0; x < 512; x += 1) {
     const t = x / 512
-    const band = 0.42 + hash(x, 0, 0, seed) * 0.33 + Math.sin(t * 180) * 0.12
+    const band = 0.8 + hash(x, 0, 0, seed) * 0.13 + Math.sin(t * 180) * 0.06
     const edge = Math.min(1, t * 28, (1 - t) * 18)
     const gap = t > 0.61 && t < 0.66 ? 0.06 : 1
     context.fillStyle = `rgba(194,180,149,${band * edge * gap})`

@@ -4,7 +4,7 @@ import './space.css'
 import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial } from './spaceMaterials.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
-import { createPlanetCompanions } from './spaceCompanions.js'
+import { createPlanetCompanions, rollSystemCompanions, companionOpacity } from './spaceCompanions.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
@@ -693,7 +693,7 @@ export default function App() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.15
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     mount.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
@@ -1290,6 +1290,7 @@ export default function App() {
     scene.add(skyGroup)
 
     const portraits = {}
+    const companionConfigs = rollSystemCompanions(DISCOVERIES.length)
     DISCOVERIES.forEach((discovery, index) => {
       const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle))
       planetTexture.colorSpace = THREE.SRGBColorSpace
@@ -1333,7 +1334,7 @@ export default function App() {
           geometry.attributes.uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
         }
         decorRing = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-          map: makeRingTexture(index + 1), roughness: 1, transparent: true, opacity: 0.82,
+          map: makeRingTexture(index + 1), roughness: 1, transparent: true, opacity: 1,
           depthWrite: false, side: THREE.DoubleSide, fog: false,
         }))
         decorRing.material.emissive.set(0x656457)
@@ -1345,7 +1346,7 @@ export default function App() {
       }
       planetDecorRings.push(decorRing)
       portraits[discovery.id] = makePlanetPortrait(renderer, planet, decorRing, camera.position)
-      const companions = createPlanetCompanions(discovery, particleTexture)
+      const companions = createPlanetCompanions(discovery, particleTexture, companionConfigs[index])
       companions.group.position.copy(planet.position)
       skyGroup.add(companions.group)
       planet.userData.companions = companions
@@ -1440,6 +1441,30 @@ export default function App() {
 
     const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
     const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
+    // Upload every companion's geometry, textures and shaders behind the intro.
+    // A tiny offscreen render also prepares planets outside the camera's view.
+    const preloadTarget = new THREE.WebGLRenderTarget(1, 1)
+    const companionCulling = new Map()
+    planetMeshes.forEach(planet => {
+      const companions = planet.userData.companions
+      companions.update(0, 1, reducedMotion)
+      companions.group.traverse(object => {
+        companionCulling.set(object, object.frustumCulled)
+        object.frustumCulled = false
+      })
+    })
+    // Warm both lighting variants: firelight near camp and sunlight in orbit.
+    for (const campVisible of [false, true]) {
+      campObjects.forEach(object => { object.visible = campVisible })
+      renderer.setRenderTarget(preloadTarget)
+      renderer.render(scene, camera)
+      renderer.setRenderTarget(null)
+      renderer.compile(skyGroup, camera, scene)
+    }
+    preloadTarget.dispose()
+    companionCulling.forEach((culled, object) => { object.frustumCulled = culled })
+    planetMeshes.forEach(planet => planet.userData.companions.update(0, 0, reducedMotion))
+
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
     const anchorNormal = new THREE.Vector3()
@@ -1995,7 +2020,12 @@ export default function App() {
         const blend = 1 - Math.exp(-dt * 5)
         planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
         const inspecting = orbitPlanet === planet
-        planet.userData.companions.update(dt, inspecting && orbit.phase === 'orbit', reducedMotion)
+        const companions = planet.userData.companions
+        const arrivalDistance = companions.outerRadius / Math.sin(angularRadius)
+        const companionFade = orbit.active
+          ? companionOpacity(camera.position.distanceTo(planet.position), arrivalDistance) * smoothstep(0, 12, orbit.distanceFromCamp)
+          : 0
+        companions.update(orbit.active ? dt : 0, companionFade, reducedMotion)
         const closeDetail = inspecting ? 1 - smoothstep(planetData.radius * 7, planetData.radius * 24, camera.position.distanceTo(planet.position)) : 0
         planet.material.userData.detail.value = THREE.MathUtils.damp(planet.material.userData.detail.value, closeDetail, 4, dt)
         const clouds = planet.userData.clouds
@@ -2018,7 +2048,7 @@ export default function App() {
         if (decorRing) {
           decorRing.scale.copy(planet.scale)
           decorRing.material.emissiveIntensity = THREE.MathUtils.damp(decorRing.material.emissiveIntensity, inspecting ? 0.22 : 0, 5, dt)
-          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, inspecting ? 0.92 : scopeAmount ? 0.8 : planet.userData.discovered ? 0.42 : 0.28, blend)
+          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, inspecting ? 1 : scopeAmount ? 0.94 : planet.userData.discovered ? 0.6 : 0.4, blend)
         }
       })
 
