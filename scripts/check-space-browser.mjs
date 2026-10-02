@@ -299,6 +299,12 @@ try {
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
   await send('Page.reload', { ignoreCache: true })
   await waitFor("document.querySelector('.space-app')?.classList.contains('is-lit')")
+  await waitFor("document.querySelector('.scene-mount canvas').height === 1688")
+  // Mobile browser chrome can resize the container without a window resize.
+  await evaluate("document.querySelector('.space-app').style.height = '720px'")
+  await waitFor("document.querySelector('.scene-mount canvas').height === 1440")
+  await evaluate("document.querySelector('.space-app').style.height = ''")
+  await waitFor("document.querySelector('.scene-mount canvas').height === 1688")
   const tap = async selector => {
     const [x, y] = await evaluate(`(() => {
       const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();

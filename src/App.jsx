@@ -696,7 +696,9 @@ export default function App() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(mount.clientWidth, mount.clientHeight)
+    const initialWidth = mount.clientWidth || window.innerWidth
+    const initialHeight = mount.clientHeight || window.innerHeight
+    renderer.setSize(initialWidth, initialHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.15
@@ -710,7 +712,7 @@ export default function App() {
     scene.background = new THREE.Color(0x000102)
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
 
-    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 3500)
+    const camera = new THREE.PerspectiveCamera(68, initialWidth / initialHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
 
     const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
@@ -1854,6 +1856,7 @@ export default function App() {
     const resize = () => {
       const width = mount.clientWidth
       const height = mount.clientHeight
+      if (!width || !height) return
       camera.aspect = width / height
       camera.updateProjectionMatrix()
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -1874,7 +1877,10 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
-    window.addEventListener('resize', resize)
+    // Mobile layout can settle after mount or change with the browser toolbar
+    // without a window resize. Follow the canvas container itself.
+    const resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(mount)
 
     const tick = (time) => {
       raf = requestAnimationFrame(tick)
@@ -2254,7 +2260,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
-      window.removeEventListener('resize', resize)
+      resizeObserver.disconnect()
       motionPreference.removeEventListener('change', updateMotionPreference)
 
       if (mount.contains(renderer.domElement)) {
