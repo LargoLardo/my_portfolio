@@ -75,6 +75,25 @@ const experience = [
   }
 ]
 
+function crossesRect(from, to, rect) {
+  let start = 0
+  let end = 1
+  for (const [position, movement, min, max] of [
+    [from.x, to.x - from.x, rect.left, rect.right],
+    [from.y, to.y - from.y, rect.top, rect.bottom],
+  ]) {
+    if (!movement) {
+      if (position < min || position > max) return false
+      continue
+    }
+    const first = (min - position) / movement
+    const last = (max - position) / movement
+    start = Math.max(start, Math.min(first, last))
+    end = Math.min(end, Math.max(first, last))
+  }
+  return start <= end
+}
+
 function LifeCanvas({ running, boardRef }) {
   const canvasRef = useRef(null)
   const drawingRef = useRef(false)
@@ -183,7 +202,61 @@ export default function MinimalPortfolio() {
   const boardRef = useRef(null)
   const pageRef = useRef(null)
   const cardRef = useRef(null)
+  const titleRef = useRef(null)
+  const orbitLinkRef = useRef(null)
   const projectDialogRef = useRef(null)
+
+  useEffect(() => {
+    const link = orbitLinkRef.current
+    const ring = link.querySelector('.saturn-attention-ring')
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+    let revealed = false
+    let visited = false
+    let animations = []
+    const cancel = () => animations.forEach(animation => animation.cancel())
+    const checkVisit = () => {
+      try {
+        visited ||= localStorage.getItem('portfolio-space-visited') === 'true'
+      } catch {
+        // Keep the link usable when browser storage is unavailable.
+      }
+      if (visited) {
+        observer.disconnect()
+        cancel()
+      }
+      return visited
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) revealed = false
+      if (entry.intersectionRatio < 0.5 || revealed || checkVisit()) return
+      revealed = true
+      if (reducedMotion.matches) return
+      cancel()
+      animations = [
+        link.animate([
+          { scale: 1 },
+          { scale: 1.14, offset: 0.3 },
+          { scale: 1 },
+        ], { duration: 750, easing: 'ease-in-out' }),
+        ring.animate([
+          { transform: 'scale(0.65)', opacity: 0 },
+          { transform: 'scale(0.9)', opacity: 0.75, offset: 0.15 },
+          { transform: 'scale(1.8)', opacity: 0 },
+        ], { duration: 1100, easing: 'ease-out' }),
+      ]
+    }, { root: pageRef.current, threshold: [0, 0.5] })
+    if (!checkVisit()) observer.observe(link)
+    window.addEventListener('pageshow', checkVisit)
+    window.addEventListener('storage', checkVisit)
+    reducedMotion.addEventListener('change', cancel)
+    return () => {
+      observer.disconnect()
+      cancel()
+      window.removeEventListener('pageshow', checkVisit)
+      window.removeEventListener('storage', checkVisit)
+      reducedMotion.removeEventListener('change', cancel)
+    }
+  }, [])
 
   useEffect(() => {
     if (activeProject) {
@@ -227,6 +300,44 @@ export default function MinimalPortfolio() {
     }
   }, [])
 
+  useEffect(() => {
+    const title = titleRef.current
+    const page = pageRef.current
+    const letters = title.querySelectorAll('.title-letter')
+    const animations = new WeakMap()
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+    let previous = null
+
+    const move = (event) => {
+      if (event.pointerType === 'touch') return
+      const point = { x: event.clientX, y: event.clientY }
+      if (previous && !reducedMotion && crossesRect(previous, point, title.getBoundingClientRect())) {
+        for (const letter of letters) {
+          const rect = letter.getBoundingClientRect()
+          const face = letter.firstElementChild
+          if (rect.left <= point.x && point.x <= rect.right && rect.top <= point.y && point.y <= rect.bottom) {
+            animations.get(face)?.cancel()
+          } else if (crossesRect(previous, point, rect)) {
+            animations.get(face)?.cancel()
+            animations.set(face, face.animate([
+              { transform: 'translate(5px, 5px)', opacity: 0.5 },
+              { transform: 'none', opacity: 1 },
+            ], { duration: 110, easing: 'ease-out' }))
+          }
+        }
+      }
+      previous = point
+    }
+    const reset = () => { previous = null }
+    window.addEventListener('pointermove', move, { passive: true })
+    page.addEventListener('scroll', reset, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', move)
+      page.removeEventListener('scroll', reset)
+      for (const letter of letters) animations.get(letter.firstElementChild)?.cancel()
+    }
+  }, [])
+
   return (
     <main className="minimal-portfolio" ref={pageRef}>
       <LifeCanvas running={running} boardRef={boardRef} />
@@ -235,12 +346,13 @@ export default function MinimalPortfolio() {
       <section className="portfolio-card" ref={cardRef}>
         <header data-scroll-layer>
           <div className="title-row">
-            <h1 aria-label="Logan Zhao">
+            <h1 ref={titleRef} aria-label="Logan Zhao">
               {'Logan Zhao'.split('').map((letter, index) => letter === ' ' ? ' ' : (
-                <span className="title-letter" aria-hidden="true" key={index}>{letter}</span>
+                <span className="title-letter" aria-hidden="true" key={index}><span className="title-letter-face">{letter}</span></span>
               ))}
             </h1>
-            <a className="saturn-link" href="/current" aria-label="Enter Logan's immersive space portfolio">
+            <a className="saturn-link" href="/current" ref={orbitLinkRef} aria-label="Enter Logan's immersive space portfolio">
+              <span className="saturn-attention-ring" aria-hidden="true" />
               <span className="saturn-ring" />
               <span className="saturn-planet" />
               <span className="saturn-label">enter orbit</span>

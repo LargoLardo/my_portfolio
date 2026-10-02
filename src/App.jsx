@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import './space.css'
+import { makeDirtTexture, makePlanetTexture, makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
+import { createPlanetOrbit } from './spaceOrbit.js'
+import { createComet } from './spaceComet.js'
+import { createPlanetCompanions, rollSystemCompanions, companionOpacity } from './spaceCompanions.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import phonographBinUrl from './assets/phonograph/scene.bin?url'
 import phonographSceneUrl from './assets/phonograph/scene.gltf?url'
 import phonographTextureUrl from './assets/phonograph/textures/Material_baseColor.png?url'
@@ -10,12 +16,13 @@ const CAMPFIRE_RADIUS = 1.05
 const EYE_HEIGHT = 1.54
 const UP = new THREE.Vector3(0, 1, 0)
 const RECORD_TRACK_CONFIG_URL = '/record-player-tracks.json'
-const CONTROLS_HINT_DURATION_MS = 30000
-const SCOPE_IDLE_REMINDER_MS = 30000
 const SIGN_READ_DISTANCE = 6.5
 const PHONOGRAPH_INTERACT_DISTANCE = 6.5
-const SCOPE_AUTO_OPEN_DURATION = 1
+const SCOPE_AUTO_OPEN_DURATION = 0.85
 const MUSIC_FADE_SECONDS = 5
+const UPLINK_MESSAGE = 'ESTABLISHING UPLINK'
+const RECORD_X = 1.7
+const RECORD_Z = -1.6
 
 const DEFAULT_RECORD_TRACKS = [
   {
@@ -35,10 +42,10 @@ const DISCOVERIES = [
     subtitle: 'Systems Design Engineering student at the University of Waterloo',
     color: '#7bdff2',
     hex: 0x7bdff2,
-    position: [-34, 30, -66],
-    radius: 3.15,
-    palette: ['#22314f', '#476d89', '#9ed4d7', '#d8b56c'],
-    planetStyle: { bands: true, spots: 3 },
+    position: [-31, 23, -75],
+    radius: 3.35,
+    palette: ['#172e3c', '#34576b', '#799488', '#d3d5bd'],
+    planetStyle: { spots: 3 },
     body: [
       'I am a Waterloo Systems Design Engineering student aiming toward machine learning, applied AI, and intelligent tools that turn messy inputs into useful systems.',
       'The thread through my work is creation through algorithmic design: reconstruction pipelines, game-playing agents, evolutionary search, and interfaces that make complex systems feel explorable.',
@@ -53,9 +60,9 @@ const DISCOVERIES = [
     subtitle: 'External-sampling MCCFR solver for no-limit poker',
     color: '#8ef6a4',
     hex: 0x8ef6a4,
-    position: [68, 38, -24],
-    radius: 2.85,
-    palette: ['#071c3d', '#115d7e', '#5fb7a1', '#e7efe2'],
+    position: [36, 25, -72],
+    radius: 3.1,
+    palette: ['#324541', '#64746b', '#a7b5a2', '#d3ceae'],
     planetStyle: { rings: true, bands: true, ringTilt: 0.42 },
     body: [
       "Built a heads-up no-limit Texas Hold'em AI and solver that trained a policy capable of winning more than 10BB/hr against basic heuristics using external-sampling MCCFR with regret matching.",
@@ -74,7 +81,7 @@ const DISCOVERIES = [
     hex: 0xffbd6b,
     position: [46, 54, 54],
     radius: 2.5,
-    palette: ['#1d1609', '#7b3f1d', '#e39b3f', '#f6df9c'],
+    palette: ['#4a3025', '#825940', '#b68d69', '#dbbe95'],
     planetStyle: { spots: 7, cracked: true },
     body: [
       'Engineered an end-to-end app pipeline that converts iPhone videos into VR-ready Gaussian splats, coordinating a 9-stage workflow across SwiftUI, FastAPI, COLMAP, FastGS, and Unity.',
@@ -121,15 +128,14 @@ const DISCOVERIES = [
   {
     id: 'poker',
     signal: 'journeygoer\'s relay',
-    world: 'Golden Seed',
+    world: 'Midnight Seed',
     title: 'Experience',
     subtitle: 'Application Programmer, Ontario Government MPBSDP',
-    color: '#f2f59f',
-    hex: 0xf2f59f,
-    visibilityBoost: 1.2,
+    color: '#7195cd',
+    hex: 0x31558f,
     position: [4, 66, -78],
     radius: 2.2,
-    palette: ['#19180d', '#55501d', '#b8a94a', '#fff6b0'],
+    palette: ['#030815', '#17345c', '#285488', '#6e92ad'],
     planetStyle: { rings: true, ringTilt: 0.78 },
     body: [
       'Built and supported automated QA tooling for Cognos BI reports using the IBM Cognos API and Playwright, helping validate 1,000+ reports per hour and protect reporting integrity.',
@@ -189,14 +195,6 @@ function seededRandom(seed) {
   }
 }
 
-const random = seededRandom(37)
-const terrainCraters = Array.from({ length: 34 }, () => ({
-  x: (random() - 0.5) * 92,
-  z: (random() - 0.5) * 92,
-  radius: 1.7 + random() * 6.5,
-  depth: 0.08 + random() * 0.45,
-}))
-
 function smoothstep(edge0, edge1, value) {
   const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
@@ -204,140 +202,17 @@ function smoothstep(edge0, edge1, value) {
 
 function terrainHeight(x, z) {
   const ripples = Math.sin(x * 0.33 + z * 0.18) * 0.045 + Math.sin(z * 0.47) * 0.035
-  let h = ripples
-
-  for (const crater of terrainCraters) {
-    const dx = x - crater.x
-    const dz = z - crater.z
-    const dist = Math.sqrt(dx * dx + dz * dz)
-
-    if (dist < crater.radius) {
-      const t = dist / crater.radius
-      h -= Math.cos(t * Math.PI * 0.5) * crater.depth
-      h += Math.exp(-Math.pow((t - 0.86) * 6, 2)) * crater.depth * 0.42
-    }
-  }
+  const distance = Math.hypot(x, z)
+  const ridge = smoothstep(14, 48, distance) * (1.6 + Math.sin(x * 0.12 + z * 0.08) * 1.2 + Math.sin(z * 0.18 - x * 0.07) * 0.7)
+  const hummocks = Math.sin(x * 1.2 + Math.sin(z * 0.8)) * Math.cos(z * 1.6) * 0.09
+  const h = ripples + ridge + hummocks + Math.sin(x * 0.73) * Math.cos(z * 0.51) * 0.16
 
   const campFlatten = 1 - smoothstep(1.2, 6.2, Math.sqrt(x * x + z * z))
-  return THREE.MathUtils.lerp(h, 0, campFlatten)
-}
-
-function makeMoonTexture(size = 512) {
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  const image = ctx.createImageData(size, size)
-  const data = image.data
-  const rand = seededRandom(91)
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const grain = rand() * 26
-      const wave = Math.sin(x * 0.057) * 8 + Math.sin((x + y) * 0.018) * 10
-      const dust = 108 + grain + wave
-      const idx = (y * size + x) * 4
-      data[idx] = dust * 0.86
-      data[idx + 1] = dust * 0.84
-      data[idx + 2] = dust * 0.78
-      data[idx + 3] = 255
-    }
-  }
-
-  ctx.putImageData(image, 0, 0)
-  return canvas
-}
-
-function makePlanetTexture(palette, seed, style = {}, width = 512, height = 256) {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  const gradient = ctx.createLinearGradient(0, 0, width, height)
-
-  palette.forEach((color, index) => {
-    gradient.addColorStop(index / Math.max(1, palette.length - 1), color)
-  })
-
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, width, height)
-
-  if (style.bands) {
-    for (let y = 0; y < height; y += 1) {
-      const wave = Math.sin(y * 0.045 + seed) * 0.5 + Math.sin(y * 0.12) * 0.25
-      const alpha = 0.06 + Math.abs(wave) * 0.14
-      ctx.fillStyle = wave > 0 ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`
-      ctx.fillRect(0, y, width, 1)
-    }
-  }
-
-  ctx.globalCompositeOperation = 'multiply'
-
-  const rand = seededRandom(seed)
-  for (let i = 0; i < 180; i += 1) {
-    const y = rand() * height
-    const h = 3 + rand() * 22
-    const alpha = 0.045 + rand() * 0.15
-    ctx.fillStyle = `rgba(${60 + rand() * 120}, ${70 + rand() * 120}, ${80 + rand() * 120}, ${alpha})`
-    ctx.fillRect(0, y, width, h)
-  }
-
-  if (style.cracked) {
-    ctx.globalCompositeOperation = 'screen'
-    ctx.strokeStyle = 'rgba(255, 202, 126, 0.28)'
-    ctx.lineWidth = 2
-
-    for (let i = 0; i < 12; i += 1) {
-      let x = rand() * width
-      let y = rand() * height
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-
-      for (let j = 0; j < 6; j += 1) {
-        x += (rand() - 0.5) * 56
-        y += (rand() - 0.5) * 32
-        ctx.lineTo(x, y)
-      }
-
-      ctx.stroke()
-    }
-  }
-
-  ctx.globalCompositeOperation = 'screen'
-  for (let i = 0; i < (style.spots ?? 0); i += 1) {
-    const x = rand() * width
-    const y = height * (0.24 + rand() * 0.52)
-    const rx = 18 + rand() * 52
-    const ry = 9 + rand() * 24
-    const spot = ctx.createRadialGradient(x, y, 0, x, y, rx)
-    spot.addColorStop(0, 'rgba(255,255,255,0.28)')
-    spot.addColorStop(0.45, 'rgba(255,255,255,0.08)')
-    spot.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.scale(1, ry / rx)
-    ctx.fillStyle = spot
-    ctx.beginPath()
-    ctx.arc(0, 0, rx, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-  }
-
-  for (let i = 0; i < 36; i += 1) {
-    const x = rand() * width
-    const y = rand() * height
-    const r = 8 + rand() * 44
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, r)
-    glow.addColorStop(0, 'rgba(255,255,255,0.16)')
-    glow.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.fillStyle = glow
-    ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  ctx.globalCompositeOperation = 'source-over'
-  return canvas
+  // Shape the phonograph's sandy drift into the same surface so its color and texture stay continuous.
+  const dx = x - RECORD_X, dz = z - RECORD_Z
+  const driftEdge = Math.max(0, 1 - (dx / 1.05) ** 2) * Math.max(0, 1 - (dz / 0.875) ** 2)
+  const drift = driftEdge * (0.13 + Math.sin(dx * 9 + dz * 5) * 0.025)
+  return THREE.MathUtils.lerp(h, 0, campFlatten) + drift
 }
 
 function makeWoodGrainTexture(seed = 1, width = 512, height = 128) {
@@ -405,6 +280,93 @@ function makeWoodBumpTexture(seed = 1, width = 512, height = 128) {
   return canvas
 }
 
+function makeCarvedWoodTexture(text, seed) {
+  const canvas = makeWoodGrainTexture(seed, 1024, 256)
+  const ctx = canvas.getContext('2d')
+  const rand = seededRandom(seed + 512)
+  const weather = ctx.createLinearGradient(0, 0, 0, 256)
+  weather.addColorStop(0, '#140e09aa')
+  weather.addColorStop(0.18, '#140e0910')
+  weather.addColorStop(0.75, '#140e0922')
+  weather.addColorStop(1, '#140e09bb')
+  ctx.fillStyle = weather
+  ctx.fillRect(0, 0, 1024, 256)
+  // Uneven yellow strokes follow the scratched lettering across each plank.
+  const letters = {
+    L: [[[0, 0], [0, 1], [0.7, 1]]],
+    O: [[[0.1, 0], [0.65, 0.04], [0.72, 0.9], [0.1, 1], [0, 0.1], [0.1, 0]]],
+    K: [[[0, 0], [0, 1]], [[0.7, 0], [0.04, 0.5], [0.72, 1]]],
+    U: [[[0, 0], [0.03, 0.94], [0.65, 1], [0.7, 0]]],
+    P: [[[0, 1], [0, 0], [0.66, 0.03], [0.67, 0.46], [0, 0.48]]],
+    H: [[[0, 0], [0, 1]], [[0.7, 0], [0.7, 1]], [[0, 0.5], [0.7, 0.5]]],
+    D: [[[0, 1], [0, 0], [0.5, 0.05], [0.7, 0.28], [0.68, 0.8], [0.45, 1], [0, 1]]],
+    S: [[[0.7, 0.04], [0.08, 0], [0, 0.43], [0.7, 0.56], [0.64, 1], [0, 0.94]]],
+    A: [[[0, 1], [0.34, 0], [0.72, 1]], [[0.15, 0.6], [0.57, 0.6]]],
+    C: [[[0.7, 0.07], [0.1, 0], [0, 0.88], [0.65, 1]]],
+    E: [[[0.7, 0], [0, 0], [0, 1], [0.7, 1]], [[0, 0.5], [0.57, 0.5]]],
+  }
+  const carve = (text, x, y, size) => {
+    for (const letter of text) {
+      const tilt = (rand() - 0.5) * 0.12
+      const baseline = y + (rand() - 0.5) * 12
+      for (const stroke of letters[letter] ?? []) {
+        const points = stroke.map(([px, py]) => [x + (px + py * tilt) * size + rand() * 2, baseline + py * size])
+        for (let segment = 1; segment < points.length; segment += 1) {
+          const [ax, ay] = points[segment - 1], [bx, by] = points[segment]
+          const length = Math.hypot(bx - ax, by - ay)
+          const nx = -(by - ay) / length, ny = (bx - ax) / length
+          const width = size * (0.035 + rand() * 0.021)
+          ctx.fillStyle = '#ffe36a'
+          ctx.beginPath()
+          ctx.moveTo(ax - nx * width, ay - ny * width)
+          ctx.lineTo((ax + bx) * 0.5 - nx * width * 1.6, (ay + by) * 0.5 - ny * width * 1.6)
+          ctx.lineTo(bx + nx, by + ny)
+          ctx.lineTo(bx + nx * width, by + ny * width)
+          ctx.lineTo(ax + nx * width * 0.6, ay + ny * width * 0.6)
+          ctx.closePath()
+          ctx.fill()
+          ctx.strokeStyle = '#ffe36a'
+          ctx.lineWidth = width * 1.25
+          ctx.beginPath()
+          ctx.moveTo(ax, ay)
+          ctx.lineTo((ax + bx) * 0.5 + rand() * 2, (ay + by) * 0.5)
+          ctx.lineTo(bx, by)
+          ctx.stroke()
+          // Fine overshoots and splinters avoid the look of printed lettering.
+          ctx.strokeStyle = '#ffe78bba'
+          ctx.lineWidth = 0.9
+          ctx.beginPath()
+          ctx.moveTo(ax - nx * width, ay - ny * width)
+          ctx.lineTo(bx + (bx - ax) * 0.08 - nx * width, by + (by - ay) * 0.08 - ny * width)
+          ctx.stroke()
+        }
+      }
+      x += size * (letter === ' ' ? 0.55 : 0.95)
+    }
+  }
+  const size = text === 'LOOK UP' ? 142 : 98
+  carve(text, text === 'LOOK UP' ? 78 : 72, (256 - size) / 2, size)
+  for (let i = 0; i < 85; i += 1) {
+    const x = rand() * 1024, y = rand() * 256
+    ctx.strokeStyle = rand() > 0.5 ? '#cfb48d22' : '#20110855'
+    ctx.lineWidth = 0.5 + rand() * 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + 8 + rand() * 115, y + (rand() - 0.5) * 6)
+    ctx.stroke()
+  }
+  for (let i = 0; i < 7; i += 1) {
+    const x = i % 2 ? 0 : 1024, y = 15 + rand() * 226
+    ctx.strokeStyle = '#170f0bc0'
+    ctx.lineWidth = 1 + rand() * 3
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + (x ? -1 : 1) * (100 + rand() * 180), y + rand() * 6)
+    ctx.stroke()
+  }
+  return canvas
+}
+
 function createWoodMaterial(seed, color, repeatX = 2.2, repeatY = 1) {
   const map = new THREE.CanvasTexture(makeWoodGrainTexture(seed))
   const bumpMap = new THREE.CanvasTexture(makeWoodBumpTexture(seed))
@@ -424,25 +386,6 @@ function createWoodMaterial(seed, color, repeatX = 2.2, repeatY = 1) {
     roughness: 0.96,
     metalness: 0,
   })
-}
-
-function makeMusicNoteTexture(size = 128) {
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-
-  ctx.clearRect(0, 0, size, size)
-  ctx.font = 'bold 92px Georgia, "Times New Roman", serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#f5d58a'
-  ctx.strokeStyle = 'rgba(25, 15, 6, 0.62)'
-  ctx.lineWidth = 7
-  ctx.strokeText('♪', size / 2, size / 2)
-  ctx.fillText('♪', size / 2, size / 2)
-
-  return canvas
 }
 
 function loadRecordTracks() {
@@ -514,6 +457,7 @@ function shortestAngleDelta(from, to) {
 
 function disposeObjectTree(root) {
   root.traverse((object) => {
+    if (object.isInstancedMesh) object.dispose()
     if (object.geometry) {
       object.geometry.dispose()
     }
@@ -536,15 +480,29 @@ function disposeScene(scene, renderer) {
   renderer.dispose()
 }
 
-function Panel({ discovery, onClose }) {
+function Panel({ panelRef, discovery, closing, onClose, onExited }) {
+  const closeRef = useRef(null)
+  useEffect(() => {
+    if (!discovery) return undefined
+    const previousFocus = document.activeElement
+    closeRef.current?.focus({ preventScroll: true })
+    return () => {
+      const target = previousFocus?.isConnected && !previousFocus.closest('[inert]')
+        ? previousFocus : document.querySelector('.sections-button')
+      target?.focus({ preventScroll: true })
+    }
+  }, [discovery])
   if (!discovery) return null
 
   return (
-    <aside className="discovery-panel" style={{ '--accent': discovery.color }}>
-      <button className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
-        x
+    <aside ref={panelRef} className={`discovery-panel ${closing ? 'is-closing' : ''}`} aria-label={discovery.title} aria-hidden={closing} inert={closing} style={{ '--accent': discovery.color }} onAnimationEnd={(event) => {
+      if (event.animationName === 'panel-exit') onExited()
+    }}>
+      <button ref={closeRef} className="panel-close" type="button" onClick={onClose} aria-label="Close discovery">
+        ×
       </button>
-      <p className="panel-signal">{discovery.signal}</p>
+      <p className="panel-eyebrow">FIELD NOTES / {String(DISCOVERIES.indexOf(discovery) + 1).padStart(2, '0')}</p>
+      <p className="panel-signal"><span />{discovery.world} · {discovery.signal}</p>
       <h1>{discovery.title}</h1>
       <p className="panel-subtitle">{discovery.subtitle}</p>
       <div className="panel-body">
@@ -570,39 +528,46 @@ function Panel({ discovery, onClose }) {
   )
 }
 
-function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
+function PortfolioSidebar({ open, activeId, onSelect, onClose, discoveredIds, portraits, children }) {
+  const closeRef = useRef(null)
+  useEffect(() => {
+    if (open) closeRef.current?.focus({ preventScroll: true })
+  }, [open])
   const egoSections = EGO_SECTION_TITLES.map((title) => DISCOVERIES.find((discovery) => discovery.title === title)).filter(Boolean)
   const projectSections = DISCOVERIES.filter((discovery) => !EGO_SECTION_TITLE_SET.has(discovery.title))
   const sidebarGroups = [
-    ['Ego System', egoSections],
-    ['Project System', projectSections],
+    ['The explorer', egoSections],
+    ['Projects & experiments', projectSections],
   ]
 
   return (
-    <aside className={`section-sidebar ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+    <aside id="field-log" className={`section-sidebar ${open ? 'is-open' : ''}`} aria-label="Field log" aria-hidden={!open} inert={!open}>
       <div className="section-sidebar-header">
         <div>
-          <span>DIRECTORY</span>
-          <strong>Portfolio Sections</strong>
+          <span>EXPEDITION DIRECTORY / 08</span>
+          <strong>Field log</strong>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close sections">
-          x
+        <button ref={closeRef} type="button" onClick={onClose} aria-label="Close field log">
+          ×
         </button>
       </div>
+      <p className="section-intro">Every signal has a story. Choose a destination.</p>
 
       <div className="section-list">
         {sidebarGroups.map(([groupName, discoveries]) => (
           <div className="section-group" key={groupName}>
-            <p className="section-group-label">{groupName}:</p>
+            <p className="section-group-label">{groupName}</p>
             {discoveries.map((discovery) => (
               <button
-                className={activeId === discovery.id ? 'is-active' : ''}
+                className={`${activeId === discovery.id ? 'is-active' : ''} ${discoveredIds.has(discovery.id) ? 'is-discovered' : 'is-uncharted'}`}
+                data-discovered={discoveredIds.has(discovery.id)}
                 type="button"
                 key={discovery.id}
                 onClick={() => onSelect(discovery.id)}
                 style={{ '--accent': discovery.color }}
               >
-                <span>{discovery.world}</span>
+                <img className="destination-portrait" src={portraits[discovery.id]} alt="" aria-hidden="true" />
+                <span className="destination-name">{discovery.world}<small>{discoveredIds.has(discovery.id) ? 'Located' : 'Uncharted'}</small></span>
                 <strong>{discovery.title}</strong>
                 <small>{discovery.subtitle}</small>
               </button>
@@ -610,28 +575,35 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose }) {
           </div>
         ))}
       </div>
+      {children}
     </aside>
   )
 }
 
 export default function App() {
   const mountRef = useRef(null)
+  const directoryButtonRef = useRef(null)
+  const helpCloseRef = useRef(null)
   const cursorRef = useRef(null)
   const scopeActiveRef = useRef(false)
   const discoveredIdsRef = useRef(new Set())
   const discoveryEventsRef = useRef([])
-  const cameraTargetRef = useRef(null)
+  const orbitTargetRef = useRef(null)
+  const panelRef = useRef(null)
+  const connectorRef = useRef(null)
+  const [orbitPhase, setOrbitPhase] = useState('ground')
   const [scopeActiveState, setScopeActiveState] = useState(false)
-  const [scopeProximity, setScopeProximity] = useState(0)
-  const scopeProximityRef = useRef(0)
-  const [scopeHoldProgress, setScopeHoldProgress] = useState(0)
-  const scopeHoldProgressRef = useRef(0)
+  const scopeSignalRef = useRef(null)
+  const progressCircleRef = useRef(null)
+  const [completedDiscovery, setCompletedDiscovery] = useState(null)
+  const [discoveredIds, setDiscoveredIds] = useState(new Set())
+  const [planetPortraits, setPlanetPortraits] = useState({})
   const [focusedTarget, setFocusedTarget] = useState(null)
   const [activeDiscovery, setActiveDiscovery] = useState(null)
+  const [discoveryClosing, setDiscoveryClosing] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sceneReady, setSceneReady] = useState(false)
   const [ignited, setIgnited] = useState(false)
-  const [controlsVisible, setControlsVisible] = useState(true)
-  const [scopeUseCount, setScopeUseCount] = useState(0)
   const [readSignAvailable, setReadSignAvailable] = useState(false)
   const readSignAvailableRef = useRef(false)
   const [signPanelOpen, setSignPanelOpen] = useState(false)
@@ -654,12 +626,7 @@ export default function App() {
     scopeActiveRef.current = value
     setScopeActiveState(value)
     if (!value) {
-      scopeHoldProgressRef.current = 0
-      setScopeHoldProgress(0)
-    }
-    if (value) {
-      setControlsVisible(false)
-      setScopeUseCount((count) => count + 1)
+      if (progressCircleRef.current) progressCircleRef.current.style.strokeDashoffset = '1'
     }
   }, [])
 
@@ -671,44 +638,31 @@ export default function App() {
     })
   }, [])
 
-  const revealDiscovery = useCallback((id) => {
-    if (!id) return
-
-    const firstDiscovery = !discoveredIdsRef.current.has(id)
-    if (firstDiscovery) {
-      discoveredIdsRef.current.add(id)
-      discoveryEventsRef.current.push({ id, firstDiscovery: true })
-    }
-    setActiveDiscovery(id)
+  const markDiscovered = useCallback((id) => {
+    if (!id || discoveredIdsRef.current.has(id)) return
+    discoveredIdsRef.current.add(id)
+    setDiscoveredIds(new Set(discoveredIdsRef.current))
+    discoveryEventsRef.current.push({ id, firstDiscovery: true })
   }, [])
 
-  const selectDiscovery = useCallback(
-    (id) => {
-      cameraTargetRef.current = id
-      revealDiscovery(id)
-    },
-    [revealDiscovery],
-  )
+  const revealDiscovery = useCallback((id) => {
+    if (!id) return
+    setCompletedDiscovery(null)
+    markDiscovered(id)
+    setDiscoveryClosing(false)
+    setActiveDiscovery(id)
+    orbitTargetRef.current = id
+    setScopeActive(false)
+  }, [markDiscovered, setScopeActive])
+
+  const closeDiscovery = useCallback(() => {
+    orbitTargetRef.current = null
+    setDiscoveryClosing(true)
+  }, [])
 
   useEffect(() => {
-    if (!ignited || !controlsVisible) return undefined
-
-    const hideTimer = window.setTimeout(() => {
-      setControlsVisible(false)
-    }, CONTROLS_HINT_DURATION_MS)
-
-    return () => window.clearTimeout(hideTimer)
-  }, [controlsVisible, ignited])
-
-  useEffect(() => {
-    if (!ignited || controlsVisible || scopeActiveState) return undefined
-
-    const reminderTimer = window.setTimeout(() => {
-      setControlsVisible(true)
-    }, SCOPE_IDLE_REMINDER_MS)
-
-    return () => window.clearTimeout(reminderTimer)
-  }, [controlsVisible, ignited, scopeActiveState, scopeUseCount])
+    if (signPanelOpen) helpCloseRef.current?.focus({ preventScroll: true })
+  }, [signPanelOpen])
 
   useEffect(() => {
     const cursor = cursorRef.current
@@ -727,64 +681,93 @@ export default function App() {
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return undefined
+    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let reducedMotion = motionPreference.matches
+    const updateMotionPreference = () => { reducedMotion = motionPreference.matches }
+    motionPreference.addEventListener('change', updateMotionPreference)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(mount.clientWidth, mount.clientHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.15
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     mount.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000000)
-    scene.fog = new THREE.FogExp2(0x020202, 0.018)
+    scene.background = new THREE.Color(0x000102)
+    scene.fog = new THREE.FogExp2(0x000102, 0.12)
 
-    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 220)
+    const camera = new THREE.PerspectiveCamera(68, mount.clientWidth / mount.clientHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
 
-    const ambient = new THREE.HemisphereLight(0x090b12, 0x0a0704, 0.04)
+    const ambient = new THREE.HemisphereLight(0x6c7d97, 0x25180f, 0.035)
     scene.add(ambient)
+    const sunlight = new THREE.DirectionalLight(0x8f9fb7, 0.5)
+    sunlight.position.set(-35, 45, 25)
+    scene.add(sunlight)
+    const particleTexture = makeParticleTexture()
 
-    const moonMaterial = new THREE.MeshStandardMaterial({
-      map: new THREE.CanvasTexture(makeMoonTexture()),
-      color: 0x9a948a,
+    const dirtMaterial = new THREE.MeshStandardMaterial({
+      map: new THREE.CanvasTexture(makeDirtTexture()),
+      color: 0xb1a390,
       roughness: 1,
       metalness: 0,
     })
-    moonMaterial.map.wrapS = THREE.RepeatWrapping
-    moonMaterial.map.wrapT = THREE.RepeatWrapping
-    moonMaterial.map.repeat.set(11, 11)
+    dirtMaterial.map.wrapS = THREE.RepeatWrapping
+    dirtMaterial.map.wrapT = THREE.RepeatWrapping
+    dirtMaterial.map.repeat.set(24, 24)
+    dirtMaterial.map.colorSpace = THREE.SRGBColorSpace
+    dirtMaterial.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    dirtMaterial.bumpMap = dirtMaterial.map
+    dirtMaterial.bumpScale = 0.085
+    dirtMaterial.vertexColors = true
 
-    const groundGeometry = new THREE.PlaneGeometry(120, 120, 176, 176)
+    const groundGeometry = new THREE.PlaneGeometry(120, 120, 240, 240)
     const groundPositions = groundGeometry.attributes.position
+    const groundColors = new Float32Array(groundPositions.count * 3)
+    const soilColor = new THREE.Color()
+    const sandColor = new THREE.Color(0xd8bc8e)
+    const earthColor = new THREE.Color(0x726953)
     for (let i = 0; i < groundPositions.count; i += 1) {
       const x = groundPositions.getX(i)
-      const z = groundPositions.getY(i)
+      const z = -groundPositions.getY(i)
       groundPositions.setZ(i, terrainHeight(x, z))
+      const sand = smoothstep(-0.5, 0.65, Math.sin(x * 0.83 + Math.sin(z)) * Math.cos(z * 0.57))
+      soilColor.copy(earthColor).lerp(sandColor, sand)
+      soilColor.multiplyScalar(THREE.MathUtils.lerp(0.5, 1, smoothstep(0.8, 2.8, Math.hypot(x, z))))
+      soilColor.toArray(groundColors, i * 3)
     }
+    groundGeometry.setAttribute('color', new THREE.BufferAttribute(groundColors, 3))
     groundGeometry.computeVertexNormals()
 
-    const ground = new THREE.Mesh(groundGeometry, moonMaterial)
+    const ground = new THREE.Mesh(groundGeometry, dirtMaterial)
     ground.rotation.x = -Math.PI / 2
     ground.receiveShadow = true
     scene.add(ground)
 
     const rocks = new THREE.Group()
-    const rockGeometry = new THREE.DodecahedronGeometry(0.24, 0)
-    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x69645c, roughness: 0.96 })
+    const rockGeometry = mergeVertices(new THREE.IcosahedronGeometry(0.24, 2))
+    const rockVertices = rockGeometry.attributes.position
+    for (let i = 0; i < rockVertices.count; i += 1) {
+      const x = rockVertices.getX(i), y = rockVertices.getY(i), z = rockVertices.getZ(i)
+      const crag = 1 + Math.sin(x * 31 + y * 13) * Math.cos(z * 23 - y * 17) * 0.18
+      rockVertices.setXYZ(i, x * crag, y * crag, z * crag)
+    }
+    rockGeometry.computeVertexNormals()
+    const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x928878, map: dirtMaterial.map, bumpMap: dirtMaterial.map, bumpScale: 0.028, roughness: 1 })
     const rockRand = seededRandom(244)
 
-    for (let i = 0; i < 82; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       const angle = rockRand() * Math.PI * 2
-      const radius = 4.2 + rockRand() * 44
+      const radius = 3.2 + rockRand() ** 2 * 36
       const x = Math.cos(angle) * radius
       const z = Math.sin(angle) * radius
 
-      if (Math.sqrt(x * x + z * z) < 7.2) continue
-
       const rock = new THREE.Mesh(rockGeometry, rockMaterial)
-      const scale = 0.32 + rockRand() * 1.4
+      const scale = 0.5 + rockRand() ** 2 * 2.8
       rock.position.set(x, terrainHeight(x, z) + scale * 0.12, z)
       rock.rotation.set(rockRand() * Math.PI, rockRand() * Math.PI, rockRand() * Math.PI)
       rock.scale.set(scale * 1.25, scale * 0.7, scale)
@@ -795,216 +778,143 @@ export default function App() {
 
     scene.add(rocks)
 
+    // Instanced gravel and dry grass keep the campsite detailed with two draw calls.
+    const gravel = new THREE.InstancedMesh(rockGeometry, rockMaterial, 460)
+    const instance = new THREE.Object3D()
+    const instanceColor = new THREE.Color()
+    for (let i = 0; i < gravel.count; i += 1) {
+      const angle = rockRand() * Math.PI * 2
+      const radius = 1.15 + rockRand() ** 0.7 * 10
+      const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius
+      const size = 0.06 + rockRand() ** 2 * 0.48
+      instance.position.set(x, terrainHeight(x, z) + size * 0.07, z)
+      instance.rotation.set(rockRand() * 3, rockRand() * 6, rockRand() * 3)
+      instance.scale.set(size * 1.4, size * 0.65, size)
+      instance.updateMatrix()
+      gravel.setMatrixAt(i, instance.matrix)
+      gravel.setColorAt(i, instanceColor.setHSL(0.08 + rockRand() * 0.05, 0.12, 0.42 + rockRand() * 0.3))
+    }
+    gravel.receiveShadow = true
+    scene.add(gravel)
+
+    const grassVertices = []
+    for (let blade = 0; blade < 7; blade += 1) {
+      const angle = blade * 2.4
+      const x = Math.cos(angle) * 0.055, z = Math.sin(angle) * 0.055
+      const height = 0.13 + rockRand() * 0.18
+      const leanX = x * 1.8, leanZ = z * 1.8
+      const width = 0.004 + rockRand() * 0.005
+      const a = [x - width, 0, z], b = [x + width, 0, z]
+      const c = [x + leanX * 0.4 - width * 0.5, height * 0.6, z + leanZ * 0.4]
+      const d = [c[0] + width, c[1], c[2]], tip = [x + leanX, height, z + leanZ]
+      grassVertices.push(...a, ...b, ...c, ...b, ...d, ...c, ...c, ...d, ...tip)
+    }
+    const grassGeometry = new THREE.BufferGeometry()
+    grassGeometry.setAttribute('position', new THREE.Float32BufferAttribute(grassVertices, 3))
+    grassGeometry.computeVertexNormals()
+    const grass = new THREE.InstancedMesh(grassGeometry, new THREE.MeshStandardMaterial({ color: 0x8b8460, roughness: 1, side: THREE.DoubleSide }), 220)
+    for (let i = 0; i < grass.count; i += 1) {
+      // Small patches leave the trampled ground around the fire mostly bare.
+      const patch = i % 18, angle = patch * 2.4
+      const radius = 3.1 + (patch % 7) * 0.72
+      const x = Math.cos(angle) * radius + (rockRand() - 0.5) * 1.3
+      const z = Math.sin(angle) * radius + (rockRand() - 0.5) * 1.3
+      instance.position.set(x, terrainHeight(x, z) - 0.012, z)
+      instance.rotation.set(0, rockRand() * Math.PI * 2, 0)
+      instance.scale.setScalar(0.6 + rockRand() * 0.9)
+      instance.updateMatrix()
+      grass.setMatrixAt(i, instance.matrix)
+      grass.setColorAt(i, instanceColor.setHSL(0.12 + rockRand() * 0.08, 0.16, 0.38 + rockRand() * 0.2))
+    }
+    grass.receiveShadow = true
+    scene.add(grass)
+
     const starGeometry = new THREE.BufferGeometry()
-    const starCount = 800
-    const starRadiusConst = 70
+    const starCount = 4200
+    const starRadiusConst = 1200
     const starPositions = new Float32Array(starCount * 3)
-    const starColors = new Float32Array(starCount * 3)
+    const starColors = new Float32Array(starCount * 4)
     const starRand = seededRandom(612)
 
     for (let i = 0; i < starCount; i += 1) {
       const theta = starRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(0.015, 0.985, starRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.985, 0.985, starRand()))
       const radius = starRadiusConst + starRand() * starRadiusConst / 2
       const y = Math.cos(phi) * radius
       const x = Math.sin(phi) * Math.cos(theta) * radius
       const z = Math.sin(phi) * Math.sin(theta) * radius
-      const brightness = 0.16 + starRand() * 0.22
+      const brightness = 0.65 + starRand() * 0.85
       const cold = starRand() > 0.28
 
       starPositions[i * 3] = x
-      starPositions[i * 3 + 1] = Math.abs(y) + 2
+      starPositions[i * 3 + 1] = y
       starPositions[i * 3 + 2] = z
-      starColors[i * 3] = cold ? brightness * 0.9 : brightness * 1.25
-      starColors[i * 3 + 1] = brightness
-      starColors[i * 3 + 2] = cold ? brightness * 1.35 : brightness * 0.86
+      starColors[i * 4] = cold ? brightness * 0.9 : brightness * 1.25
+      starColors[i * 4 + 1] = brightness
+      starColors[i * 4 + 2] = cold ? brightness * 1.35 : brightness * 0.86
+      starColors[i * 4 + 3] = skyElevationBrightness(y / radius)
     }
 
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
-    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3))
+    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 4))
     const stars = new THREE.Points(
       starGeometry,
       new THREE.PointsMaterial({
-        size: 0.72,
+        size: 7.5,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.95,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        toneMapped: false,
         fog: false,
       }),
     )
     scene.add(stars)
 
-    const anchorStarCount = 300
-    const anchorStarRadiusConst = 100
+    const anchorStarCount = 420
+    const anchorStarRadiusConst = 1500
     const anchorStarGeometry = new THREE.BufferGeometry()
     const anchorStarPositions = new Float32Array(anchorStarCount * 3)
-    const anchorStarColors = new Float32Array(anchorStarCount * 3)
+    const anchorStarColors = new Float32Array(anchorStarCount * 4)
     const anchorRand = seededRandom(1717)
 
     for (let i = 0; i < anchorStarCount; i += 1) {
       const theta = anchorRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(0.08, 0.98, anchorRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.98, 0.98, anchorRand()))
       const radius = anchorStarRadiusConst + anchorRand() * anchorStarRadiusConst / 2
       const y = Math.cos(phi) * radius
-      const twinkle = 0.24 + anchorRand() * 0.28
+      const twinkle = 1.6 + anchorRand() * 1.2
 
       anchorStarPositions[i * 3] = Math.sin(phi) * Math.cos(theta) * radius
-      anchorStarPositions[i * 3 + 1] = Math.abs(y) + 4
+      anchorStarPositions[i * 3 + 1] = y
       anchorStarPositions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * radius
-      anchorStarColors[i * 3] = twinkle
-      anchorStarColors[i * 3 + 1] = twinkle * (0.9 + anchorRand() * 0.25)
-      anchorStarColors[i * 3 + 2] = twinkle * (0.95 + anchorRand() * 0.35)
+      anchorStarColors[i * 4] = twinkle
+      anchorStarColors[i * 4 + 1] = twinkle * (0.9 + anchorRand() * 0.25)
+      anchorStarColors[i * 4 + 2] = twinkle * (0.95 + anchorRand() * 0.35)
+      anchorStarColors[i * 4 + 3] = skyElevationBrightness(y / radius)
     }
 
     anchorStarGeometry.setAttribute('position', new THREE.BufferAttribute(anchorStarPositions, 3))
-    anchorStarGeometry.setAttribute('color', new THREE.BufferAttribute(anchorStarColors, 3))
+    anchorStarGeometry.setAttribute('color', new THREE.BufferAttribute(anchorStarColors, 4))
     const anchorStars = new THREE.Points(
       anchorStarGeometry,
       new THREE.PointsMaterial({
-        size: 1.35,
+        size: 16.2,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.85,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        toneMapped: false,
         fog: false,
       }),
     )
     scene.add(anchorStars)
-
-    const constellationGroup = new THREE.Group()
-    const guideStarPositions = new Float32Array([
-      -34, 44, -82,
-      -25, 52, -89,
-      -12, 48, -84,
-      -2, 58, -92,
-      9, 53, -86,
-      75, 36, -18,
-      84, 46, -5,
-      78, 56, 10,
-      90, 42, 22,
-      69, 50, 30,
-      31, 39, 78,
-      16, 52, 86,
-      -2, 48, 82,
-      -18, 58, 90,
-      -34, 44, 76,
-      -78, 34, 20,
-      -90, 47, 7,
-      -84, 55, -10,
-      -70, 43, -28,
-      -92, 60, -35,
-      -18, 72, -34,
-      0, 82, -12,
-      22, 76, 4,
-      8, 88, 32,
-      -20, 80, 24,
-    ])
-    const guideStarGeometry = new THREE.BufferGeometry()
-    guideStarGeometry.setAttribute('position', new THREE.BufferAttribute(guideStarPositions, 3))
-    const guideStars = new THREE.Points(
-      guideStarGeometry,
-      new THREE.PointsMaterial({
-        color: 0xf7efd2,
-        size: 1.45,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        fog: false,
-      }),
-    )
-    constellationGroup.add(guideStars)
-
-    const constellationPairs = [
-      [0, 1],
-      [1, 2],
-      [0, 2],
-      [2, 3],
-      [2, 4],
-      [3, 4],
-      [5, 6],
-      [6, 7],
-      [7, 8],
-      [7, 9],
-      [10, 11],
-      [11, 12],
-      [12, 13],
-      [12, 14],
-      [15, 16],
-      [16, 17],
-      [17, 18],
-      [17, 19],
-      [20, 21],
-      [21, 22],
-      [22, 23],
-      [23, 24],
-      [20, 24],
-    ]
-    const constellationLines = new Float32Array(constellationPairs.length * 6)
-    constellationPairs.forEach(([from, to], index) => {
-      for (let axis = 0; axis < 3; axis += 1) {
-        constellationLines[index * 6 + axis] = guideStarPositions[from * 3 + axis]
-        constellationLines[index * 6 + 3 + axis] = guideStarPositions[to * 3 + axis]
-      }
-    })
-    const constellationGeometry = new THREE.BufferGeometry()
-    constellationGeometry.setAttribute('position', new THREE.BufferAttribute(constellationLines, 3))
-    const constellationBeamMaterial = new THREE.MeshBasicMaterial({
-      color: 0x8be8ff,
-      transparent: true,
-      opacity: 0.06,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    })
-    constellationPairs.forEach(([from, to]) => {
-      const start = new THREE.Vector3(
-        guideStarPositions[from * 3],
-        guideStarPositions[from * 3 + 1],
-        guideStarPositions[from * 3 + 2],
-      )
-      const end = new THREE.Vector3(
-        guideStarPositions[to * 3],
-        guideStarPositions[to * 3 + 1],
-        guideStarPositions[to * 3 + 2],
-      )
-      const direction = end.clone().sub(start)
-      const length = direction.length()
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, length, 8, 1, true), constellationBeamMaterial)
-      beam.position.copy(start).add(end).multiplyScalar(0.5)
-      beam.quaternion.setFromUnitVectors(UP, direction.normalize())
-      constellationGroup.add(beam)
-    })
-    constellationGroup.add(
-      new THREE.LineSegments(
-        constellationGeometry,
-        new THREE.LineBasicMaterial({
-          color: 0x5fbfff,
-          transparent: true,
-          opacity: 0.1,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          fog: false,
-        }),
-      ),
-    )
-    constellationGroup.add(
-      new THREE.LineSegments(
-        constellationGeometry,
-        new THREE.LineBasicMaterial({
-          color: 0x9bdfff,
-          transparent: true,
-          opacity: 0.18,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          fog: false,
-        }),
-      ),
-    )
-    scene.add(constellationGroup)
+    const comet = createComet(particleTexture)
+    scene.add(comet.group)
 
     const campfire = new THREE.Group()
     scene.add(campfire)
@@ -1027,12 +937,7 @@ export default function App() {
     }
 
     const logGeometry = new THREE.CylinderGeometry(0.095, 0.13, 1.28, 14)
-    const logMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a2514,
-      roughness: 0.9,
-      emissive: 0x240804,
-      emissiveIntensity: 0.08,
-    })
+    const logMaterial = createWoodMaterial(431, 0x38291d, 1, 3)
     for (let i = 0; i < 5; i += 1) {
       const log = new THREE.Mesh(logGeometry, logMaterial)
       log.position.set(0, 0.18 + i * 0.018, 0)
@@ -1043,13 +948,14 @@ export default function App() {
       campfire.add(log)
     }
 
-    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x8a8177, roughness: 1 })
-    const stoneGeometry = new THREE.DodecahedronGeometry(0.18, 0)
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x85817a, map: dirtMaterial.map, bumpMap: dirtMaterial.map, bumpScale: 0.025, roughness: 1 })
+    const stoneGeometry = new THREE.IcosahedronGeometry(0.18, 2)
     for (let i = 0; i < 18; i += 1) {
       const angle = (i / 18) * Math.PI * 2
       const stone = new THREE.Mesh(stoneGeometry, stoneMaterial)
-      stone.position.set(Math.cos(angle) * 0.82, 0.11, Math.sin(angle) * 0.82)
-      stone.scale.set(1.1, 0.72, 0.92)
+      const radius = 0.8 + Math.sin(i * 7.1) * 0.035
+      stone.position.set(Math.cos(angle) * radius, 0.10, Math.sin(angle) * radius)
+      stone.scale.set(1.05 + Math.sin(i * 4.1) * 0.15, 0.68 + Math.sin(i * 2.3) * 0.12, 0.94)
       stone.rotation.set(angle * 0.7, angle, angle * 0.31)
       stone.castShadow = true
       stone.receiveShadow = true
@@ -1063,165 +969,98 @@ export default function App() {
     signGroup.rotation.y = 0.18
     scene.add(signGroup)
 
-    const signTopPlankMaterial = createWoodMaterial(805, 0xb27445)
-    const signBottomPlankMaterial = createWoodMaterial(811, 0x965c34)
-    const signPostMaterial = createWoodMaterial(819, 0x75482b, 0.75, 2.8)
-    const signTextMaterial = new THREE.MeshBasicMaterial({
-      color: 0x050505,
-      toneMapped: false,
-      fog: false,
-    })
-    const signPostGeometry = new THREE.CylinderGeometry(0.055, 0.075, 1.05, 8)
-    const signPost = new THREE.Mesh(signPostGeometry, signPostMaterial)
-    signPost.position.set(-0.14, 0.42, -0.04)
-    signPost.rotation.z = -0.24
-    signPost.castShadow = true
-    signPost.receiveShadow = true
-    signGroup.add(signPost)
+    const signWood = createWoodMaterial(716, 0x9e8b6f, 1, 1)
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.27, 0.085), signWood)
+      post.position.set(side * 0.52, 0.5, -0.1)
+      post.rotation.z = side * 0.07
+      post.castShadow = true
+      signGroup.add(post)
+    }
 
     const signBoardGroup = new THREE.Group()
-    signBoardGroup.position.set(0, 0.91, 0)
-    signBoardGroup.rotation.z = -0.17
+    signBoardGroup.position.set(0, 1, 0)
+    signBoardGroup.rotation.z = -0.04
     signGroup.add(signBoardGroup)
-
-    const topPlank = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.26, 0.1), signTopPlankMaterial)
-    topPlank.position.set(0.02, 0.08, 0)
-    topPlank.rotation.z = -0.025
-    topPlank.castShadow = true
-    topPlank.receiveShadow = true
-    signBoardGroup.add(topPlank)
-
-    const bottomPlank = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.3, 0.1), signBottomPlankMaterial)
-    bottomPlank.position.set(-0.04, -0.14, -0.006)
-    bottomPlank.rotation.z = 0.015
-    bottomPlank.castShadow = true
-    bottomPlank.receiveShadow = true
-    signBoardGroup.add(bottomPlank)
-
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.1, 0.07), signWood)
+    brace.position.z = -0.15
+    brace.rotation.z = 0.37
+    brace.castShadow = true
+    signBoardGroup.add(brace)
+    const pegMaterial = new THREE.MeshStandardMaterial({ color: 0x493020, roughness: 1 })
+    const pegGeometry = new THREE.CylinderGeometry(0.016, 0.013, 0.016, 7)
+    const planks = [
+      { text: 'LOOK UP', width: 1.86, height: 0.36, x: -0.025, y: 0.17, tilt: 0.015 },
+      { text: 'HOLD SPACE', width: 1.71, height: 0.27, x: 0.045, y: -0.18, tilt: -0.028 },
+    ]
+    planks.forEach((plank, index) => {
+      const group = new THREE.Group()
+      group.position.set(plank.x, plank.y, index * 0.012)
+      group.rotation.z = plank.tilt
+      const outline = new THREE.Shape()
+      const corners = [[-0.5, -0.42], [-0.33, -0.48], [0.32, -0.46], [0.49, -0.5], [0.482, -0.13], [0.5, 0.08], [0.485, 0.46], [0.17, 0.49], [-0.12, 0.46], [-0.49, 0.5], [-0.48, 0.08], [-0.5, -0.03]]
+      corners.forEach(([x, y], i) => {
+        const px = (x + Math.sin(i * 3 + index * 5) * 0.005) * plank.width, py = y * plank.height
+        if (i === 0) outline.moveTo(px, py)
+        else outline.lineTo(px, py)
+      })
+      outline.closePath()
+      const board = new THREE.Mesh(new THREE.ExtrudeGeometry(outline, { depth: 0.09, bevelEnabled: false }), signWood)
+      board.position.z = -0.05
+      board.castShadow = true
+      board.receiveShadow = true
+      group.add(board)
+      const faceGeometry = new THREE.ShapeGeometry(outline)
+      const positions = faceGeometry.attributes.position, uv = faceGeometry.attributes.uv
+      for (let i = 0; i < positions.count; i += 1) {
+        uv.setXY(i, positions.getX(i) / plank.width + 0.5, positions.getY(i) / plank.height + 0.5)
+      }
+      const texture = new THREE.CanvasTexture(makeCarvedWoodTexture(plank.text, 719 + index * 13))
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+      const face = new THREE.Mesh(faceGeometry, new THREE.MeshStandardMaterial({ map: texture, bumpMap: texture, bumpScale: 0.008, roughness: 1 }))
+      face.position.z = 0.041
+      face.receiveShadow = true
+      group.add(face)
+      for (const side of [-1, 1]) {
+        const peg = new THREE.Mesh(pegGeometry, pegMaterial)
+        peg.rotation.x = Math.PI / 2
+        peg.position.set(side * 0.57, 0.015 * side, 0.046)
+        group.add(peg)
+      }
+      signBoardGroup.add(group)
+    })
     const signInteractionMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.72, 0.48, 0.12),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        colorWrite: false,
-        side: THREE.DoubleSide,
-      }),
+      new THREE.BoxGeometry(1.9, 0.73, 0.15),
+      new THREE.MeshBasicMaterial({ visible: false }),
     )
     signInteractionMesh.geometry.computeBoundingBox()
-    signInteractionMesh.position.set(-0.01, -0.04, 0.07)
     signBoardGroup.add(signInteractionMesh)
-
-    const letterBarGeometry = new THREE.BoxGeometry(1, 1, 0.018)
-    const addLetterBar = (x, y, width, height, rotation = 0) => {
-      const bar = new THREE.Mesh(letterBarGeometry, signTextMaterial)
-      bar.position.set(x, y, 0.066)
-      bar.scale.set(width, height, 1)
-      bar.rotation.z = rotation
-      signBoardGroup.add(bar)
-    }
-    const addBlockLetter = (letter, x, y, scale = 1) => {
-      const t = 0.022 * scale
-      const w = 0.12 * scale
-      const h = 0.2 * scale
-      const halfW = w / 2
-      const halfH = h / 2
-
-      if (letter === 'L') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x - halfW / 2, y - halfH, w, t)
-      }
-      if (letter === 'O') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'K') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW * 0.35, y + halfH * 0.32, t, h * 0.62, -0.72)
-        addLetterBar(x + halfW * 0.35, y - halfH * 0.32, t, h * 0.62, 0.72)
-      }
-      if (letter === 'W') {
-        addLetterBar(x - halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x + halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x - halfW * 0.22, y - halfH * 0.34, t, h * 0.62, -0.36)
-        addLetterBar(x + halfW * 0.22, y - halfH * 0.34, t, h * 0.62, 0.36)
-      }
-      if (letter === 'I') {
-        addLetterBar(x, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'T') {
-        addLetterBar(x, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-      }
-      if (letter === 'H') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x + halfW, y, t, h)
-        addLetterBar(x, y, w, t)
-      }
-      if (letter === 'U') {
-        addLetterBar(x - halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x + halfW, y + t * 0.8, t, h - t * 1.6)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'P') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x + halfW, y + halfH * 0.5, t, h * 0.5)
-      }
-      if (letter === 'S') {
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x, y - halfH, w, t)
-        addLetterBar(x - halfW, y + halfH * 0.5, t, h * 0.5)
-        addLetterBar(x + halfW, y - halfH * 0.5, t, h * 0.5)
-      }
-      if (letter === 'C') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-      if (letter === 'E') {
-        addLetterBar(x - halfW, y, t, h)
-        addLetterBar(x, y + halfH, w, t)
-        addLetterBar(x, y, w, t)
-        addLetterBar(x, y - halfH, w, t)
-      }
-    }
-
-    const addBlockText = (text, y, scale) => {
-      const advance = 0.151 * scale
-      const spaceAdvance = 0.22 * scale
-      const width = [...text].reduce((total, letter) => total + (letter === ' ' ? spaceAdvance : advance), 0) - advance
-      let x = -width / 2
-
-      ;[...text].forEach((letter) => {
-        if (letter === ' ') {
-          x += spaceAdvance
-          return
-        }
-
-        addBlockLetter(letter, x, y, scale)
-        x += advance
-      })
-    }
-
-    addBlockText('LOOK UP', 0.08, 0.64)
-    addBlockText('WITH SCOPE', -0.15, 0.5)
-
-    const recordX = 1.7
-    const recordZ = -1.6
+    const recordX = RECORD_X
+    const recordZ = RECORD_Z
     const recordPlayer = new THREE.Group()
-    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.1, recordZ)
+    recordPlayer.position.set(recordX, terrainHeight(recordX, recordZ) - 0.22, recordZ)
     const toSpawn = new THREE.Vector3(-recordX, 0, 4.15 - recordZ).normalize()
     recordPlayer.rotation.y = Math.atan2(-toSpawn.x, -toSpawn.z) - Math.PI / 6
-    recordPlayer.rotation.x = - Math.PI / 12
+    recordPlayer.rotation.x = -0.13
+    recordPlayer.rotation.z = 0.14
     scene.add(recordPlayer)
+
+    const rubbleRand = seededRandom(145)
+    for (let i = 0; i < 28; i += 1) {
+      const angle = rubbleRand() * Math.PI * 2
+      const radius = 0.32 + rubbleRand() * 0.68
+      const x = recordX + Math.cos(angle) * radius
+      const z = recordZ + Math.sin(angle) * radius * 0.8
+      const stone = new THREE.Mesh(rockGeometry, rockMaterial)
+      const scale = 0.1 + rubbleRand() ** 2 * 0.6
+      stone.scale.set(scale * 1.3, scale * 0.6, scale)
+      stone.position.set(x, terrainHeight(x, z) + scale * 0.09, z)
+      stone.rotation.set(rubbleRand(), rubbleRand() * 6, rubbleRand())
+      stone.castShadow = stone.receiveShadow = true
+      scene.add(stone)
+    }
+
 
     const recordInteractionMesh = new THREE.Mesh(
       new THREE.BoxGeometry(1.45, 1.55, 1.35),
@@ -1240,14 +1079,6 @@ export default function App() {
 
     let phonographLoadCancelled = false
     let recordDisc = null
-    const hornMouth = new THREE.Object3D()
-    hornMouth.position.set(0, 1.15, -0.07)
-    recordPlayer.add(hornMouth)
-
-    const hornProjection = new THREE.Object3D()
-    hornProjection.position.set(0, 1.48, -0.42)
-    recordPlayer.add(hornProjection)
-
     const phonographManager = new THREE.LoadingManager()
     phonographManager.setURLModifier((url) => {
       const normalizedUrl = url.replace(/\\/g, '/')
@@ -1281,9 +1112,22 @@ export default function App() {
             material.map.colorSpace = THREE.SRGBColorSpace
             material.map.anisotropy = 4
           }
-          material.roughness = Math.max(material.roughness ?? 0.4, 0.56)
+          material.roughness = 0.94
+          material.color.set(0x817567)
           material.metalness = material.metalness ?? 0
         })
+      })
+
+      // Smooth the existing horn mesh and give its brass a restrained metal response.
+      phonograph.getObjectByName('horn_5')?.traverse((object) => {
+        if (!object.isMesh) return
+        const geometry = object.geometry
+        geometry.deleteAttribute('normal')
+        geometry.deleteAttribute('uv')
+        object.geometry = mergeVertices(geometry)
+        object.geometry.computeVertexNormals()
+        geometry.dispose()
+        object.material = new THREE.MeshStandardMaterial({ color: 0x736749, roughness: 0.8, metalness: 0.2, side: THREE.DoubleSide })
       })
 
       recordPlayer.add(phonograph)
@@ -1291,89 +1135,7 @@ export default function App() {
       phonograph.updateWorldMatrix(true, true)
 
       recordDisc = phonograph.getObjectByName('record_2')
-      const hornNode = phonograph.getObjectByName('horn_5')
-      const hornMesh = phonograph.getObjectByName('Object_14')
-      if (hornNode && hornMesh?.geometry?.attributes.position) {
-        const positions = hornMesh.geometry.attributes.position
-        const bounds = hornMesh.geometry.boundingBox ?? new THREE.Box3().setFromBufferAttribute(positions)
-        const rimCenter = new THREE.Vector3()
-        let rimCount = 0
-
-        for (let i = 0; i < positions.count; i += 1) {
-          const vertex = new THREE.Vector3().fromBufferAttribute(positions, i)
-          if (vertex.z < bounds.min.z + 0.5) {
-            rimCenter.add(vertex)
-            rimCount += 1
-          }
-        }
-
-        if (rimCount > 0) {
-          rimCenter.multiplyScalar(1 / rimCount)
-          const mouthLocal = hornMesh.localToWorld(rimCenter.clone())
-          const throatLocal = hornNode.localToWorld(new THREE.Vector3())
-          recordPlayer.worldToLocal(mouthLocal)
-          recordPlayer.worldToLocal(throatLocal)
-
-          const exitDirection = mouthLocal.clone().sub(throatLocal).normalize()
-          hornMouth.position.copy(mouthLocal)
-          hornProjection.position.copy(mouthLocal).addScaledVector(exitDirection, 0.48)
-        }
-      }
     })
-
-    const musicNoteCount = 10
-    const noteTexture = new THREE.CanvasTexture(makeMusicNoteTexture())
-    noteTexture.colorSpace = THREE.SRGBColorSpace
-    const musicNoteSprites = []
-    const musicNoteAges = new Float32Array(musicNoteCount)
-    const musicNoteLifetimes = new Float32Array(musicNoteCount)
-    const musicNoteVelocities = Array.from({ length: musicNoteCount }, () => new THREE.Vector3())
-    const musicNoteRand = seededRandom(2841)
-    const hornOrigin = new THREE.Vector3()
-    const hornTip = new THREE.Vector3()
-    const hornDirection = new THREE.Vector3()
-    const musicNoteRight = new THREE.Vector3()
-    const musicNoteLift = new THREE.Vector3()
-
-    const respawnMusicNote = (index, randomizeAge = false) => {
-      hornMouth.getWorldPosition(hornOrigin)
-      hornProjection.getWorldPosition(hornTip)
-      hornDirection.copy(hornTip).sub(hornOrigin).normalize()
-      musicNoteRight.crossVectors(hornDirection, UP).normalize()
-      musicNoteLift.crossVectors(musicNoteRight, hornDirection).normalize()
-
-      const sprite = musicNoteSprites[index]
-      sprite.position.copy(hornOrigin)
-      sprite.position.addScaledVector(musicNoteRight, (musicNoteRand() - 0.5) * 0.22)
-      sprite.position.addScaledVector(musicNoteLift, (musicNoteRand() - 0.5) * 0.14)
-      sprite.position.y += (musicNoteRand() - 0.5) * 0.1
-      musicNoteVelocities[index]
-        .copy(hornDirection)
-        .multiplyScalar(0.2 + musicNoteRand() * 0.22)
-        .addScaledVector(UP, 0.18 + musicNoteRand() * 0.22)
-        .addScaledVector(musicNoteRight, (musicNoteRand() - 0.5) * 0.28)
-        .addScaledVector(musicNoteLift, (musicNoteRand() - 0.5) * 0.16)
-      musicNoteLifetimes[index] = 2.6 + musicNoteRand() * 1.7
-      musicNoteAges[index] = randomizeAge ? musicNoteRand() * musicNoteLifetimes[index] : 0
-    }
-
-    for (let i = 0; i < musicNoteCount; i += 1) {
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: noteTexture,
-          color: 0xf2d28a,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          fog: false,
-          toneMapped: false,
-        }),
-      )
-      sprite.scale.setScalar(0.2)
-      scene.add(sprite)
-      musicNoteSprites.push(sprite)
-      respawnMusicNote(i, true)
-    }
 
     let recordTracks = DEFAULT_RECORD_TRACKS
     let recordTrackIndex = 0
@@ -1382,6 +1144,7 @@ export default function App() {
     let recordObjectUrl = null
     let recordMaxVolume = DEFAULT_RECORD_TRACKS[0].volume ?? 0.28
     let recordFadeElapsed = 0
+    let recordListeningDistance = camera.position.distanceTo(recordPlayer.position)
     let audioCancelled = false
     let audioUnlockRegistered = false
     const playRecordAudio = () => {
@@ -1460,52 +1223,26 @@ export default function App() {
     const flameGroup = new THREE.Group()
     campfire.add(flameGroup)
 
-    const flameMaterials = [
-      new THREE.MeshBasicMaterial({
-        color: 0xffe09a,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-      new THREE.MeshBasicMaterial({
-        color: 0xff7d2d,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-      new THREE.MeshBasicMaterial({
-        color: 0x5bc7ff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    ]
-    const flameMeshes = [
-      new THREE.Mesh(new THREE.ConeGeometry(0.23, 0.92, 18), flameMaterials[1]),
-      new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.72, 18), flameMaterials[0]),
-      new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.34, 16), flameMaterials[2]),
-    ]
-
-    flameMeshes.forEach((flame, index) => {
-      flame.position.y = [0.56, 0.5, 0.28][index]
-      flame.rotation.y = index * 1.7
+    const flameMeshes = Array.from({ length: 3 }, (_, index) => {
+      const flame = new THREE.Mesh(new THREE.PlaneGeometry(0.72 - index * 0.1, 1.08 - index * 0.15), makeFlameMaterial())
+      flame.position.set((index - 1) * 0.12, 0.68 - index * 0.07, index * 0.08)
       flameGroup.add(flame)
+      return flame
     })
 
-    const fireLight = new THREE.PointLight(0xff8a2f, 0, 13.5, 1.7)
+    const fireLight = new THREE.PointLight(0xffbb7d, 0, 10, 1.8)
     fireLight.position.set(0, 1.15, 0)
     fireLight.castShadow = true
     fireLight.shadow.mapSize.set(1024, 1024)
+    fireLight.shadow.bias = -0.0005
+    fireLight.shadow.normalBias = 0.045
     campfire.add(fireLight)
 
     const lowGlow = new THREE.PointLight(0xff3b18, 0, 4.2, 2)
     lowGlow.position.set(0, 0.24, 0)
     campfire.add(lowGlow)
 
-    const sparkCount = 125
+    const sparkCount = 64
     const sparkGeometry = new THREE.BufferGeometry()
     const sparkPositions = new Float32Array(sparkCount * 3)
     const sparkVelocities = new Float32Array(sparkCount * 3)
@@ -1538,7 +1275,8 @@ export default function App() {
     const sparks = new THREE.Points(
       sparkGeometry,
       new THREE.PointsMaterial({
-        size: 0.055,
+        size: 0.035,
+        map: particleTexture,
         vertexColors: true,
         transparent: true,
         opacity: 0,
@@ -1549,110 +1287,77 @@ export default function App() {
     campfire.add(sparks)
 
     const planetMeshes = []
-    const planetRings = []
     const planetDecorRings = []
     const skyGroup = new THREE.Group()
     scene.add(skyGroup)
 
+    const portraits = {}
+    const companionConfigs = rollSystemCompanions(DISCOVERIES.length)
     DISCOVERIES.forEach((discovery, index) => {
-      const planetTexture = new THREE.CanvasTexture(
-        makePlanetTexture(discovery.palette, index + 10, discovery.planetStyle),
-      )
+      const skyBrightness = { value: 1 }
+      const geometry = makePlanetGeometry(discovery.radius, index + 10, discovery.planetStyle)
+      const planetTexture = new THREE.CanvasTexture(makePlanetTexture(discovery.palette, index + 10, { ...discovery.planetStyle, craterData: geometry.userData.craters }))
       planetTexture.colorSpace = THREE.SRGBColorSpace
-      const visibilityBoost = discovery.visibilityBoost ?? 1
-      const planetMaterial = new THREE.MeshBasicMaterial({
-        map: planetTexture,
-        color: discoveredIdsRef.current.has(discovery.id) ? 0xffffff : 0x242424,
-        transparent: false,
-        depthWrite: true,
-        toneMapped: false,
-        fog: false,
-      })
-      const planet = new THREE.Mesh(new THREE.SphereGeometry(discovery.radius, 48, 32), planetMaterial)
-      planet.position.set(...discovery.position)
+      planetTexture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
+      const planet = new THREE.Mesh(
+        geometry,
+        withSkyBrightness(makePlanetSurfaceMaterial(planetTexture, index + 10, discovery.planetStyle), skyBrightness),
+      )
+      planet.position.set(...discovery.position).multiplyScalar(1.65)
       planet.userData.discoveryId = discovery.id
+      planet.userData.orbitRadius = discovery.radius * (discovery.planetStyle.rings ? 2.2 : 1.1)
       planet.userData.discovered = discoveredIdsRef.current.has(discovery.id)
       planet.userData.discoveryGlow = 0
-      planet.userData.hoverScale = 1
-      planet.renderOrder = 3
       skyGroup.add(planet)
       planetMeshes.push(planet)
 
-      const fullBrightShell = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.018, 48, 32),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: discoveredIdsRef.current.has(discovery.id) ? Math.min(0.48, 0.18 * visibilityBoost) : 0,
-          depthTest: false,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-          fog: false,
-        }),
-      )
-      fullBrightShell.position.copy(planet.position)
-      fullBrightShell.renderOrder = 7
-      skyGroup.add(fullBrightShell)
-      planet.userData.fullBrightShell = fullBrightShell
-
       const atmosphere = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.09, 32, 16),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-          side: THREE.BackSide,
-          toneMapped: false,
-          fog: false,
-        }),
+        new THREE.SphereGeometry(discovery.radius * 1.025, 48, 32),
+        withSkyBrightness(makeAtmosphereMaterial(discovery.hex), skyBrightness),
       )
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
       planet.userData.atmosphere = atmosphere
-
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(discovery.radius * 1.35, discovery.radius * 2.35, 96),
-        new THREE.MeshBasicMaterial({
-          color: discovery.hex,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-          fog: false,
-        }),
-      )
-      ring.position.copy(planet.position)
-      skyGroup.add(ring)
-      planetRings.push(ring)
+      if (!discovery.planetStyle.bands && !discovery.planetStyle.cracked) {
+        const clouds = new THREE.Mesh(
+          new THREE.SphereGeometry(discovery.radius * 1.008, 96, 64),
+          withSkyBrightness(makePlanetCloudMaterial(index + 21, discovery.palette.at(-1)), skyBrightness),
+        )
+        clouds.position.copy(planet.position)
+        skyGroup.add(clouds)
+        planet.userData.clouds = clouds
+      }
 
       let decorRing = null
       if (discovery.planetStyle?.rings) {
-        decorRing = new THREE.Mesh(
-          new THREE.RingGeometry(discovery.radius * 1.32, discovery.radius * 2.12, 128),
-          new THREE.MeshBasicMaterial({
-            color: discovery.hex,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-            blending: THREE.AdditiveBlending,
-            toneMapped: false,
-            fog: false,
-          }),
-        )
+        const inner = discovery.radius * 1.35
+        const outer = discovery.radius * 2.12
+        const geometry = new THREE.RingGeometry(inner, outer, 128, 1)
+        const position = geometry.attributes.position
+        for (let i = 0; i < position.count; i += 1) {
+          geometry.attributes.uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
+        }
+        decorRing = new THREE.Mesh(geometry, withSkyBrightness(new THREE.MeshStandardMaterial({
+          map: makeRingTexture(index + 1, discovery.palette[2]), roughness: 1, transparent: true, opacity: 1,
+          depthWrite: false, side: THREE.DoubleSide, fog: false,
+        }), skyBrightness))
+        decorRing.material.emissive.set(0x777777)
+        decorRing.material.emissiveMap = decorRing.material.map
+        decorRing.material.emissiveIntensity = 0
         decorRing.position.copy(planet.position)
         decorRing.rotation.set(Math.PI / 2 + discovery.planetStyle.ringTilt, index * 0.48, index * 0.2)
         skyGroup.add(decorRing)
       }
       planetDecorRings.push(decorRing)
+      portraits[discovery.id] = makePlanetPortrait(renderer, planet, decorRing, camera.position)
+      const companions = createPlanetCompanions(discovery, particleTexture, companionConfigs[index])
+      companions.group.position.copy(planet.position)
+      skyGroup.add(companions.group)
+      planet.userData.companions = companions
+      planet.userData.orbitRadius = Math.max(planet.userData.orbitRadius, companions.outerRadius)
     })
 
-    const burstCount = 900
+    const burstCount = 256
     const burstPositions = new Float32Array(burstCount * 3)
     const burstVelocities = new Float32Array(burstCount * 3)
     const burstColors = new Float32Array(burstCount * 3)
@@ -1668,7 +1373,8 @@ export default function App() {
     const burstParticles = new THREE.Points(
       burstGeometry,
       new THREE.PointsMaterial({
-        size: 4.2,
+        size: 2,
+        map: particleTexture,
         sizeAttenuation: false,
         vertexColors: true,
         transparent: true,
@@ -1682,22 +1388,28 @@ export default function App() {
     burstParticles.frustumCulled = false
     burstParticles.renderOrder = 8
     skyGroup.add(burstParticles)
+    const discoveryWave = new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.025, 128),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+    )
+    skyGroup.add(discoveryWave)
+    let waveAge = 2
+    let waveRadius = 1
 
     const spawnDiscoveryBurst = (planet, index, firstDiscovery) => {
       if (!firstDiscovery) return
 
       const discovery = DISCOVERIES[index]
       const color = new THREE.Color(discovery.hex)
-      const burstSize = 230
+      waveAge = 0
+      waveRadius = discovery.radius
+      discoveryWave.position.copy(planet.position)
+      discoveryWave.material.color.copy(color).lerp(new THREE.Color(0xffffff), 0.4)
+      const burstSize = 72
       const visibilityBoost = discovery.visibilityBoost ?? 1
       planet.userData.discovered = true
       planet.userData.discoveryGlow = Math.max(planet.userData.discoveryGlow, 2.4)
       planet.material.color.setRGB(1 * visibilityBoost, 1 * visibilityBoost, 1 * visibilityBoost)
-      planet.userData.fullBrightShell.material.opacity = Math.max(
-        planet.userData.fullBrightShell.material.opacity,
-        Math.min(0.5, 0.3 * visibilityBoost),
-      )
-
       for (let i = 0; i < burstSize; i += 1) {
         const slot = burstCursor
         burstCursor = (burstCursor + 1) % burstCount
@@ -1709,7 +1421,7 @@ export default function App() {
         const dy = y
         const dz = radial * Math.sin(theta)
         const surface = discovery.radius * (1.08 + burstRand() * 0.5)
-        const speed = 7 + burstRand() * 12
+        const speed = 2 + burstRand() * 4
 
         burstPositions[slot * 3] = planet.position.x + dx * surface
         burstPositions[slot * 3 + 1] = planet.position.y + dy * surface
@@ -1720,7 +1432,7 @@ export default function App() {
         burstAges[slot] = 0
         burstLifetimes[slot] = 0.48 + burstRand() * 0.58
         const sparkleColor = color.clone().lerp(new THREE.Color(0xffffff), 0.08 + burstRand() * 0.16)
-        const sparkleIntensity = 2.4 + burstRand() * 1.35
+        const sparkleIntensity = 0.6 + burstRand() * 0.5
         burstBaseColors[slot * 3] = sparkleColor.r * sparkleIntensity
         burstBaseColors[slot * 3 + 1] = sparkleColor.g * sparkleIntensity
         burstBaseColors[slot * 3 + 2] = sparkleColor.b * sparkleIntensity
@@ -1731,6 +1443,36 @@ export default function App() {
       burstParticles.material.opacity = 1
     }
 
+    const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
+    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
+    // Upload every companion's geometry, textures and shaders behind the intro.
+    // A tiny offscreen render also prepares planets outside the camera's view.
+    const preloadTarget = new THREE.WebGLRenderTarget(1, 1)
+    const companionCulling = new Map()
+    planetMeshes.forEach(planet => {
+      const companions = planet.userData.companions
+      companions.update(0, 1, reducedMotion)
+      companions.group.traverse(object => {
+        companionCulling.set(object, object.frustumCulled)
+        object.frustumCulled = false
+      })
+    })
+    // Warm both lighting variants: firelight near camp and sunlight in orbit.
+    for (const campVisible of [false, true]) {
+      campObjects.forEach(object => { object.visible = campVisible })
+      renderer.setRenderTarget(preloadTarget)
+      renderer.render(scene, camera)
+      renderer.setRenderTarget(null)
+      renderer.compile(skyGroup, camera, scene)
+    }
+    preloadTarget.dispose()
+    companionCulling.forEach((culled, object) => { object.frustumCulled = culled })
+    planetMeshes.forEach(planet => planet.userData.companions.update(0, 0, reducedMotion))
+
+    const frameOffset = new THREE.Vector2()
+    const projected = new THREE.Vector3()
+    const anchorNormal = new THREE.Vector3()
+    const anchorView = new THREE.Vector3()
     const raycaster = new THREE.Raycaster()
     const center = new THREE.Vector2(0, 0)
     const pointerNdc = new THREE.Vector2()
@@ -1739,7 +1481,10 @@ export default function App() {
     const planetTint = new THREE.Color()
     const interactionCenter = new THREE.Vector3()
     const pressed = new Set()
+    let scopeKeyHeld = false
     const velocity = new THREE.Vector3()
+    const desiredVelocity = new THREE.Vector3()
+    const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ')
     const forward = new THREE.Vector3()
     const right = new THREE.Vector3()
     const drag = {
@@ -1749,82 +1494,69 @@ export default function App() {
       y: 0,
       moved: 0,
     }
+    const touchPoints = new Map()
+    let pinchDistance = 0, gestureScale = null
+    const touchDistance = () => {
+      const [a, b] = touchPoints.values()
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+    }
 
     let yaw = 0
-    let pitch = -0.17
-    let cameraPanTarget = null
+    let pitch = -0.1
+    let viewYaw = yaw
+    let viewPitch = pitch
     let localFocus = null
     let scopeHoldTarget = null
     let scopeHoldElapsed = 0
     let scopeAutoOpenedTarget = null
-    const scopeSparkTimes = new Map()
-    let hasSetIgnited = false
-    let lastTime = performance.now()
+    let scopeLostTime = 0
+    let displayedProgress = 0
+    let displayedProximity = 0
+    let hasStartedIntro = false
+    const startTime = performance.now()
+    let lastTime = startTime
     let raf = 0
 
-    const triggerScopeDiscovery = (id, elapsed) => {
-      if (!id || !scopeActiveRef.current) return
-
-      const lastSpark = scopeSparkTimes.get(id) ?? -Infinity
-      if (elapsed - lastSpark < 1.2) return
-
-      const firstDiscovery = !discoveredIdsRef.current.has(id)
-      if (!firstDiscovery) return
-
-      scopeSparkTimes.set(id, elapsed)
-      discoveredIdsRef.current.add(id)
-      discoveryEventsRef.current.push({ id, firstDiscovery: true })
-    }
-
-    const setFocus = (id, elapsed) => {
+    const setFocus = (id) => {
       if (localFocus === id) return
-      triggerScopeDiscovery(id, elapsed)
       localFocus = id
       setFocusedTarget(id)
-    }
-
-    const setScopeHoldProgressValue = (value, force = false) => {
-      const nextProgress = THREE.MathUtils.clamp(value, 0, 1)
-      if (!force && Math.abs(nextProgress - scopeHoldProgressRef.current) < 0.012) return
-
-      scopeHoldProgressRef.current = nextProgress
-      setScopeHoldProgress(nextProgress)
     }
 
     const resetScopeHold = () => {
       scopeHoldTarget = null
       scopeHoldElapsed = 0
+      scopeLostTime = 0
       scopeAutoOpenedTarget = null
-      setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
     }
 
     const updateScopeAutoOpen = (id, dt) => {
-      if (!scopeActiveRef.current || !id) {
+      if (!scopeActiveRef.current) {
         resetScopeHold()
-        return
+      } else if (!id) {
+        if (scopeAutoOpenedTarget) resetScopeHold()
+        scopeLostTime += dt
+        if (scopeLostTime > 0.2) scopeHoldElapsed = Math.max(0, scopeHoldElapsed - dt * 1.5)
+        if (scopeHoldElapsed === 0) resetScopeHold()
+      } else {
+        scopeLostTime = 0
+        if (scopeHoldTarget !== id) {
+          scopeHoldTarget = id
+          scopeHoldElapsed = 0
+          scopeAutoOpenedTarget = null
+        }
+        if (scopeAutoOpenedTarget !== id) {
+          scopeHoldElapsed = Math.min(SCOPE_AUTO_OPEN_DURATION, scopeHoldElapsed + dt)
+          if (scopeHoldElapsed >= SCOPE_AUTO_OPEN_DURATION) {
+            scopeAutoOpenedTarget = id
+            revealDiscovery(id)
+            setCompletedDiscovery(id)
+          }
+        }
       }
-
-      if (scopeHoldTarget !== id) {
-        scopeHoldTarget = id
-        scopeHoldElapsed = 0
-        scopeAutoOpenedTarget = null
-        setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-      }
-
-      if (scopeAutoOpenedTarget === id) {
-        setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-        return
-      }
-
-      scopeHoldElapsed = Math.min(SCOPE_AUTO_OPEN_DURATION, scopeHoldElapsed + dt)
       const progress = scopeHoldElapsed / SCOPE_AUTO_OPEN_DURATION
-      setScopeHoldProgressValue(progress, progress >= 1)
-
-      if (progress >= 1) {
-        scopeAutoOpenedTarget = id
-        setScopeHoldProgressValue(0, true)
-        revealDiscovery(id)
-      }
+      displayedProgress = progress === 1 ? 1 : THREE.MathUtils.damp(displayedProgress, progress, 22, dt)
+      if (progressCircleRef.current) progressCircleRef.current.style.strokeDashoffset = String(1 - displayedProgress)
     }
 
     const setSignPromptAvailable = (value) => {
@@ -1883,7 +1615,7 @@ export default function App() {
     }
 
     const isInteractionBoxAtPointer = (event, interactionMesh, maxDistance) => {
-      if (scopeActiveRef.current) return false
+      if (scopeActiveRef.current || orbit.active || orbitTargetRef.current) return false
 
       interactionMesh.updateWorldMatrix(true, false)
       interactionMesh.getWorldPosition(interactionCenter)
@@ -1899,14 +1631,7 @@ export default function App() {
       Boolean(recordAudio && recordTrackTitle) && isInteractionBoxAtPointer(event, recordInteractionMesh, PHONOGRAPH_INTERACT_DISTANCE)
 
     const openFocusedPlanet = (event = null) => {
-      if (scopeActiveRef.current) {
-        if (localFocus) {
-          scopeAutoOpenedTarget = localFocus
-          setScopeHoldProgressValue(0, scopeHoldProgressRef.current !== 0)
-          revealDiscovery(localFocus)
-        }
-        return
-      }
+      if (scopeActiveRef.current) return
 
       const clickedId = event ? getDiscoveredPlanetIdAtPointer(event) : null
       if (clickedId) {
@@ -1933,29 +1658,48 @@ export default function App() {
     }
 
     const onPointerHover = (event) => {
+      if (event.target !== renderer.domElement) {
+        setSignPromptAvailable(false)
+        setPhonographPromptAvailable(false)
+        return
+      }
       const signAvailable = isReadableSignAtPointer(event)
       setSignPromptAvailable(signAvailable)
       setPhonographPromptAvailable(!signAvailable && isSkippableRecordAtPointer(event))
     }
 
     const onPointerDown = (event) => {
-      if (event.button === 2) {
-        setScopeActive(true)
-        return
+      if (event.button !== 0 && event.button !== 2) return
+      if (event.button === 2 && !orbit.active && !orbitTargetRef.current) setScopeActive(true)
+
+      mount.focus({ preventScroll: true })
+      mount.setPointerCapture(event.pointerId)
+      if (event.pointerType === 'touch') {
+        touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        if (touchPoints.size > 1) {
+          pinchDistance = touchDistance()
+          drag.active = false
+          drag.pointerId = null
+          return
+        }
       }
-
-      if (event.button !== 0) return
-
       drag.active = true
       drag.pointerId = event.pointerId
       drag.x = event.clientX
       drag.y = event.clientY
       drag.moved = 0
-      cameraPanTarget = null
-      mount.setPointerCapture(event.pointerId)
     }
 
     const onPointerMove = (event) => {
+      if (touchPoints.has(event.pointerId)) {
+        touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        if (touchPoints.size > 1) {
+          const nextDistance = touchDistance()
+          if (pinchDistance > 0 && nextDistance > 0) orbit.zoom(pinchDistance / nextDistance)
+          pinchDistance = nextDistance
+          return
+        }
+      }
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
       const dx = event.clientX - drag.x
@@ -1964,8 +1708,13 @@ export default function App() {
       drag.y = event.clientY
       drag.moved += Math.abs(dx) + Math.abs(dy)
 
-      yaw -= dx * 0.003
-      pitch = THREE.MathUtils.clamp(pitch - dy * 0.0028, -0.65, 1.18)
+      if (orbit.active || orbitTargetRef.current) {
+        orbit.drag(dx, dy)
+        return
+      }
+      const sensitivity = scopeActiveRef.current ? 0.0014 : 0.003
+      yaw -= dx * sensitivity
+      pitch = THREE.MathUtils.clamp(pitch - dy * sensitivity, -0.65, 1.18)
     }
 
     const onPointerLeave = () => {
@@ -1974,14 +1723,22 @@ export default function App() {
     }
 
     const onPointerUp = (event) => {
-      if (event.button === 2) {
-        setScopeActive(false)
+      if (event.button === 2) setScopeActive(false)
+      if (mount.hasPointerCapture(event.pointerId)) mount.releasePointerCapture(event.pointerId)
+      if (touchPoints.delete(event.pointerId) && touchPoints.size) {
+        pinchDistance = touchDistance()
+        const [pointerId, point] = touchPoints.entries().next().value
+        drag.active = touchPoints.size === 1
+        drag.pointerId = pointerId
+        drag.x = point.x
+        drag.y = point.y
+        drag.moved = Infinity // Lifting a finger after a pinch must not trigger a tap.
         return
       }
 
       if (!drag.active || drag.pointerId !== event.pointerId) return
 
-      if (drag.moved < 7) {
+      if (!orbit.active && !orbitTargetRef.current && event.button === 0 && drag.moved < 7) {
         if (!tryOpenSignPanel(event) && !trySkipRecord(event)) {
           openFocusedPlanet(event)
         }
@@ -1989,23 +1746,66 @@ export default function App() {
 
       drag.active = false
       drag.pointerId = null
-      if (mount.hasPointerCapture(event.pointerId)) {
-        mount.releasePointerCapture(event.pointerId)
-      }
+      pinchDistance = 0
     }
 
     const onContextMenu = (event) => event.preventDefault()
+    const onWheel = (event) => {
+      if (!orbit.active) return
+      event.preventDefault()
+      if (gestureScale !== null) return
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? mount.clientHeight : 1
+      const delta = event.deltaY * unit * (event.ctrlKey ? 0.01 : 0.0015)
+      orbit.zoom(Math.exp(THREE.MathUtils.clamp(delta, -1, 1)))
+    }
+    // Safari trackpads emit gesture events instead of Ctrl+wheel pinch events.
+    const onGestureStart = (event) => {
+      if (!orbit.active) return
+      event.preventDefault()
+      gestureScale = event.scale
+    }
+    const onGestureChange = (event) => {
+      if (gestureScale === null) return
+      event.preventDefault()
+      if (touchPoints.size < 2) orbit.zoom(gestureScale / event.scale)
+      gestureScale = event.scale
+    }
+    const onGestureEnd = (event) => {
+      if (gestureScale !== null) event.preventDefault()
+      gestureScale = null
+    }
 
     const onKeyDown = (event) => {
-      if (event.repeat && event.code !== 'Space') return
+      // Discovery moves focus to Close; keep the held scan key from activating it.
+      if (event.code === 'Space' && scopeKeyHeld) {
+        event.preventDefault()
+        return
+      }
+      if (mount.inert) return
+      if (event.repeat) return
       if (event.code === 'Escape') {
-        setActiveDiscovery(null)
+        setCompletedDiscovery(null)
+        resetScopeHold()
+        closeDiscovery()
         setSidebarOpen(false)
         setSignPanelOpen(false)
         setScopeActive(false)
+        mount.focus({ preventScroll: true })
+        return
       }
+      if (event.target.closest('button, a, aside')) return
+      if (orbit.active || orbitTargetRef.current) {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault()
+        if (event.code === 'ArrowLeft') orbit.drag(-30, 0)
+        if (event.code === 'ArrowRight') orbit.drag(30, 0)
+        if (event.code === 'ArrowUp') orbit.drag(0, -30)
+        if (event.code === 'ArrowDown') orbit.drag(0, 30)
+        return
+      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault()
       if (event.code === 'Space') {
         event.preventDefault()
+        scopeKeyHeld = true
         setScopeActive(true)
       }
       pressed.add(event.code)
@@ -2018,15 +1818,27 @@ export default function App() {
     }
 
     const onKeyUp = (event) => {
-      if (event.code === 'Space') {
+      if (event.code === 'Space' && scopeKeyHeld) {
         event.preventDefault()
+        scopeKeyHeld = false
         setScopeActive(false)
       }
       pressed.delete(event.code)
     }
 
     const onBlur = () => {
+      scopeKeyHeld = false
+      setCompletedDiscovery(null)
       pressed.clear()
+      velocity.set(0, 0, 0)
+      drag.active = false
+      drag.pointerId = null
+      for (const pointerId of touchPoints.keys()) {
+        if (mount.hasPointerCapture(pointerId)) mount.releasePointerCapture(pointerId)
+      }
+      touchPoints.clear()
+      pinchDistance = 0
+      gestureScale = null
       setScopeActive(false)
     }
 
@@ -2035,14 +1847,20 @@ export default function App() {
       const height = mount.clientHeight
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       renderer.setSize(width, height)
     }
 
     mount.addEventListener('pointerdown', onPointerDown)
     mount.addEventListener('pointermove', onPointerMove)
-    mount.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointerup', onPointerUp)
+    mount.addEventListener('pointercancel', onBlur)
     mount.addEventListener('pointerleave', onPointerLeave)
     mount.addEventListener('contextmenu', onContextMenu)
+    mount.addEventListener('wheel', onWheel, { passive: false })
+    mount.addEventListener('gesturestart', onGestureStart, { passive: false })
+    mount.addEventListener('gesturechange', onGestureChange, { passive: false })
+    mount.addEventListener('gestureend', onGestureEnd, { passive: false })
     window.addEventListener('pointermove', onPointerHover)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -2051,34 +1869,33 @@ export default function App() {
 
     const tick = (time) => {
       raf = requestAnimationFrame(tick)
-      const elapsed = time * 0.001
+      const elapsed = (time - startTime) * 0.001
       const dt = Math.min(0.04, (time - lastTime) * 0.001)
       lastTime = time
-      const ignition = smoothstep(0.85, 2.65, elapsed)
-      const firePulse = 0.78 + Math.sin(elapsed * 17.1) * 0.12 + Math.sin(elapsed * 29.7) * 0.06
+      const ignition = smoothstep(0, 1.6, elapsed)
+      const firePulse = reducedMotion ? 0.85 : 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
-      ambient.intensity = 0.025 + ignition * 0.035
-      fireLight.intensity = ignition * (8.6 + firePulse * 4.2)
-      lowGlow.intensity = ignition * (1.8 + firePulse)
+      ambient.intensity = 0.025 + ignition * 0.01
+      fireLight.intensity = ignition * (10.5 + firePulse * 2.2)
+      lowGlow.intensity = ignition * (0.55 + firePulse * 0.3)
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
 
       flameMeshes.forEach((flame, index) => {
-        const wave = Math.sin(elapsed * (8 + index * 1.8) + index * 2.1)
-        const wobble = 1 + wave * 0.12
-        flame.scale.set(0.9 + wave * 0.08, ignition * wobble, 0.9 - wave * 0.05)
-        flame.rotation.y += dt * (0.8 + index * 0.25)
-        flame.position.x = Math.sin(elapsed * 7 + index) * 0.035
-        flame.position.z = Math.cos(elapsed * 6.4 + index) * 0.035
-        flame.material.opacity = ignition * [0.52, 0.65, 0.34][index]
+        flame.material.uniforms.time.value = (reducedMotion ? 0 : elapsed) + index * 11
+        flame.material.uniforms.opacity.value = ignition * (0.66 - index * 0.12)
+        flame.rotation.y = Math.atan2(camera.position.x, camera.position.z)
+        flame.scale.y = reducedMotion ? 1 : 0.94 + Math.sin(elapsed * 3.2 + index) * 0.06
       })
 
-      if (recordDisc) {
+      if (recordDisc && !reducedMotion) {
         recordDisc.rotation.y += dt * 2.85
       }
 
+      // Keep the departure listening distance through flights, orbits and transfers.
+      if (!orbit.active) recordListeningDistance = camera.position.distanceTo(recordPlayer.position)
       if (recordAudio) {
-        const recordDistance = camera.position.distanceTo(recordPlayer.position)
+        recordAudio.muted = audioMutedRef.current
         if (!recordAudio.paused) {
           recordFadeElapsed = Math.min(MUSIC_FADE_SECONDS, recordFadeElapsed + dt)
         }
@@ -2086,28 +1903,13 @@ export default function App() {
         const recordVolumeTarget =
           (audioMutedRef.current ? 0 : recordMaxVolume) *
           fadeAmount *
-          THREE.MathUtils.clamp(1 - (recordDistance - 1) / 8, 0.1, 1)
-        recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 0.055)
+          THREE.MathUtils.clamp(1 - (recordListeningDistance - 1) / 8, 0.1, 1)
+        recordAudio.volume = THREE.MathUtils.lerp(recordAudio.volume, recordVolumeTarget, 1 - Math.exp(-dt * 3.4))
       }
 
-      musicNoteSprites.forEach((sprite, index) => {
-        musicNoteAges[index] += dt
-        if (musicNoteAges[index] >= musicNoteLifetimes[index]) {
-          respawnMusicNote(index)
-        }
-
-        const life = THREE.MathUtils.clamp(musicNoteAges[index] / musicNoteLifetimes[index], 0, 1)
-        const flutter = Math.sin(elapsed * 2.5 + index * 0.91) * 0.025
-        sprite.position.addScaledVector(musicNoteVelocities[index], dt)
-        sprite.position.x += flutter * 1.8 * dt
-        sprite.position.z += Math.cos(elapsed * 2.1 + index) * 0.045 * dt
-        sprite.position.y += Math.sin(elapsed * 1.6 + index) * 0.01 * dt
-        sprite.material.opacity = ignition * Math.sin(Math.PI * life) * Math.pow(1 - life, 0.48) * 0.62
-        sprite.scale.setScalar(0.16 + life * 0.28)
-        sprite.material.rotation = Math.sin(elapsed * 1.8 + index) * 0.22
-      })
-
       sparks.material.opacity = ignition * 0.88
+      sparks.visible = !reducedMotion
+      burstParticles.visible = !reducedMotion
       for (let i = 0; i < sparkCount; i += 1) {
         sparkAges[i] += dt
         if (sparkAges[i] >= sparkLifetimes[i]) {
@@ -2137,60 +1939,76 @@ export default function App() {
       sparkGeometry.attributes.position.needsUpdate = true
       sparkGeometry.attributes.color.needsUpdate = true
 
-      const requestedTargetId = cameraTargetRef.current
-      if (requestedTargetId) {
-        cameraTargetRef.current = null
-        const planetIndex = DISCOVERIES.findIndex((discovery) => discovery.id === requestedTargetId)
-        if (planetIndex >= 0) {
-          targetDirection.copy(planetMeshes[planetIndex].position).sub(camera.position).normalize()
-          cameraPanTarget = {
-            yaw: Math.atan2(-targetDirection.x, -targetDirection.z),
-            pitch: THREE.MathUtils.clamp(Math.asin(targetDirection.y), -0.65, 1.18),
-          }
+      const orbitPlanet = planetMeshes.find(planet => planet.userData.discoveryId === orbitTargetRef.current) ?? null
+      const panelBounds = panelRef.current?.getBoundingClientRect()
+      const log = mount.parentElement.querySelector('.section-sidebar.is-open')
+      const logBounds = log?.getBoundingClientRect()
+      const width = mount.clientWidth, height = mount.clientHeight
+      const mobile = width <= 760
+      // Frame the actual free sky between instruments, including when the log opens.
+      const left = !mobile && panelBounds ? panelBounds.right + 30 : 20
+      const rightEdge = !mobile && logBounds ? logBounds.left - 30 : width - 20
+      const top = 76
+      const bottom = mobile && panelBounds ? panelBounds.top - 24 : height - 70
+      const centerX = (left + rightEdge) / 2, centerY = (top + bottom) / 2
+      const hasCompanions = orbitPlanet && (orbitPlanet.userData.companions.config.moonCount || orbitPlanet.userData.companions.config.ufo)
+      const diameter = Math.max(80, Math.min(rightEdge - left, bottom - top) * (hasCompanions ? 0.88 : 0.72))
+      const discovery = orbitPlanet && DISCOVERY_BY_ID[orbitPlanet.userData.discoveryId]
+      const outerRadius = orbitPlanet?.userData.orbitRadius ?? 1
+      const angularRadius = Math.atan(Math.tan(THREE.MathUtils.degToRad(24)) * diameter / height)
+      const orbitDistance = outerRadius / Math.sin(angularRadius)
+      if (orbit.active || orbitPlanet) {
+        pressed.clear()
+        velocity.set(0, 0, 0)
+        // Freeze the ground look controls at the saved view, not their damped target.
+        yaw = viewYaw
+        pitch = viewPitch
+      } else {
+        const lookEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 22)
+        viewYaw += shortestAngleDelta(viewYaw, yaw) * lookEase
+        viewPitch = THREE.MathUtils.lerp(viewPitch, pitch, lookEase)
+        camera.quaternion.setFromEuler(viewEuler.set(viewPitch, viewYaw, 0))
+        forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+        forward.y = 0
+        forward.normalize()
+        right.crossVectors(forward, UP).normalize()
+        desiredVelocity.set(0, 0, 0)
+
+        if (pressed.has('KeyW') || pressed.has('ArrowUp')) desiredVelocity.add(forward)
+        if (pressed.has('KeyS') || pressed.has('ArrowDown')) desiredVelocity.sub(forward)
+        if (pressed.has('KeyD') || pressed.has('ArrowRight')) desiredVelocity.add(right)
+        if (pressed.has('KeyA') || pressed.has('ArrowLeft')) desiredVelocity.sub(right)
+
+        desiredVelocity.normalize().multiplyScalar(scopeActiveRef.current ? 1.05 : 1.85)
+        velocity.lerp(desiredVelocity, 1 - Math.exp(-dt * 12))
+        if (velocity.lengthSq() > 0.00001) {
+          camera.position.addScaledVector(velocity, dt)
+          clampPlayer()
         }
       }
+      orbit.update(orbitPlanet, orbitDistance, dt, reducedMotion)
+      const campVisible = !orbit.active || orbit.distanceFromCamp < 27
+      campObjects.forEach(object => { object.visible = campVisible })
 
-      if (cameraPanTarget) {
-        const panEase = 1 - Math.exp(-dt * 2.8)
-        const yawDelta = shortestAngleDelta(yaw, cameraPanTarget.yaw)
-        yaw += yawDelta * panEase
-        pitch = THREE.MathUtils.lerp(pitch, cameraPanTarget.pitch, panEase)
-
-        if (Math.abs(yawDelta) < 0.004 && Math.abs(pitch - cameraPanTarget.pitch) < 0.004) {
-          yaw = cameraPanTarget.yaw
-          pitch = cameraPanTarget.pitch
-          cameraPanTarget = null
-        }
-      }
-
-      const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ')
-      camera.quaternion.setFromEuler(euler)
-      forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
-      forward.y = 0
-      forward.normalize()
-      right.crossVectors(forward, UP).normalize()
-      velocity.set(0, 0, 0)
-
-      if (pressed.has('KeyW') || pressed.has('ArrowUp')) velocity.add(forward)
-      if (pressed.has('KeyS') || pressed.has('ArrowDown')) velocity.sub(forward)
-      if (pressed.has('KeyD') || pressed.has('ArrowRight')) velocity.add(right)
-      if (pressed.has('KeyA') || pressed.has('ArrowLeft')) velocity.sub(right)
-
-      if (velocity.lengthSq() > 0) {
-        velocity.normalize().multiplyScalar((scopeActiveRef.current ? 1.05 : 1.85) * dt)
-        camera.position.add(velocity)
-        clampPlayer()
-      }
-
-      camera.fov = THREE.MathUtils.lerp(camera.fov, scopeActiveRef.current ? 34 : 68, 0.12)
-      camera.updateProjectionMatrix()
+      // Preserve enough horizontal view to include the camp and planets in portrait.
+      const explorationFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(34)) / Math.min(1, Math.max(0.5, camera.aspect))))
+      camera.fov = THREE.MathUtils.lerp(camera.fov, orbitPlanet ? 48 : scopeActiveRef.current ? 19 : explorationFov, reducedMotion ? 1 : 1 - Math.exp(-dt * 18))
+      const frameEase = reducedMotion ? 1 : 1 - Math.exp(-dt * 5)
+      frameOffset.x = THREE.MathUtils.lerp(frameOffset.x, orbitPlanet ? width / 2 - centerX : 0, frameEase)
+      frameOffset.y = THREE.MathUtils.lerp(frameOffset.y, orbitPlanet ? height / 2 - centerY : 0, frameEase)
+      camera.setViewOffset(width, height, frameOffset.x, frameOffset.y, width, height)
+      camera.updateMatrixWorld()
 
       stars.position.copy(camera.position)
       anchorStars.position.copy(camera.position)
-      constellationGroup.position.copy(camera.position)
-      stars.rotation.y += dt * 0.006
-      anchorStars.rotation.y += dt * 0.004
-      constellationGroup.rotation.y += dt * 0.003
+      comet.update(elapsed, dt, camera, reducedMotion)
+      waveAge += dt
+      discoveryWave.visible = waveAge < 1.3 && !reducedMotion
+      if (discoveryWave.visible) {
+        discoveryWave.lookAt(camera.position)
+        discoveryWave.scale.setScalar(waveRadius * (1.1 + waveAge * 3.5))
+        discoveryWave.material.opacity = Math.max(0, 1 - waveAge / 1.3) ** 2 * 0.85
+      }
 
       while (discoveryEventsRef.current.length > 0) {
         const event = discoveryEventsRef.current.shift()
@@ -2214,9 +2032,9 @@ export default function App() {
         const fade = Math.pow(1 - life, 2.15) * (0.85 + flare * 1.1) * (0.76 + Math.sin(elapsed * 24 + i) * 0.24)
         activeBurstParticles = activeBurstParticles || fade > 0.01
 
-        burstVelocities[i * 3] *= 0.992
-        burstVelocities[i * 3 + 1] *= 0.992
-        burstVelocities[i * 3 + 2] *= 0.992
+        burstVelocities[i * 3] *= Math.exp(-dt * 0.48)
+        burstVelocities[i * 3 + 1] *= Math.exp(-dt * 0.48)
+        burstVelocities[i * 3 + 2] *= Math.exp(-dt * 0.48)
         burstPositions[i * 3] += burstVelocities[i * 3] * dt
         burstPositions[i * 3 + 1] += burstVelocities[i * 3 + 1] * dt
         burstPositions[i * 3 + 2] += burstVelocities[i * 3 + 2] * dt
@@ -2226,7 +2044,7 @@ export default function App() {
       }
       burstGeometry.attributes.position.needsUpdate = burstParticlesChanged
       burstGeometry.attributes.color.needsUpdate = burstParticlesChanged
-      burstParticles.material.opacity = THREE.MathUtils.lerp(burstParticles.material.opacity, activeBurstParticles ? 1 : 0, 0.08)
+      burstParticles.material.opacity = THREE.MathUtils.lerp(burstParticles.material.opacity, activeBurstParticles ? 1 : 0, 1 - Math.exp(-dt * 5))
 
       raycaster.setFromCamera(center, camera)
       const hits = raycaster.intersectObjects(planetMeshes, false)
@@ -2243,9 +2061,9 @@ export default function App() {
           const distance = targetDirection.length()
           targetDirection.multiplyScalar(1 / distance)
           const angle = cameraDirection.angleTo(targetDirection)
-          const lockAngle = Math.atan(DISCOVERIES[index].radius / distance) + 0.09
-          const scanAngle = lockAngle * 3.8
-          proximity = Math.max(proximity, THREE.MathUtils.clamp(1 - angle / scanAngle, 0, 1))
+          const lockAngle = Math.atan(DISCOVERIES[index].radius / distance) + 0.016
+          const scanAngle = 0.72
+          proximity = Math.max(proximity, 1 - THREE.MathUtils.clamp((angle - lockAngle) / (scanAngle - lockAngle), 0, 1))
 
           if (!focusedId && angle < lockAngle && angle < bestAngle) {
             bestAngle = angle
@@ -2253,110 +2071,109 @@ export default function App() {
           }
         })
       }
-      if (Math.abs(proximity - scopeProximityRef.current) > 0.025) {
-        scopeProximityRef.current = proximity
-        setScopeProximity(proximity)
+      if (focusedId && scopeActiveRef.current) proximity = 1
+      displayedProximity = reducedMotion ? proximity : THREE.MathUtils.damp(displayedProximity, proximity, 24, dt)
+      if (proximity === 1 && displayedProximity > 0.99) displayedProximity = 1
+      if (scopeSignalRef.current) {
+        scopeSignalRef.current.style.setProperty('--signal-gap', `${(1 - displayedProximity) * 80}px`)
+        scopeSignalRef.current.style.opacity = String(0.28 + displayedProximity * 0.72)
       }
-      setFocus(focusedId, elapsed)
-      updateScopeAutoOpen(focusedId, dt)
+      if (progressCircleRef.current) progressCircleRef.current.style.opacity = displayedProximity === 1 ? '1' : '0'
+      if (orbit.active) focusedId = null
+      setFocus(focusedId)
+      updateScopeAutoOpen(displayedProximity === 1 ? focusedId : null, dt)
 
       planetMeshes.forEach((planet, index) => {
-        const discovery = DISCOVERIES[index]
-        const focused = focusedId === discovery.id
-        const visibilityBoost = discovery.visibilityBoost ?? 1
-        planet.userData.discoveryGlow = Math.max(0, planet.userData.discoveryGlow - dt * 0.72)
+        const planetData = DISCOVERIES[index]
+        const focused = focusedId === planetData.id
+        planet.userData.discoveryGlow = Math.max(0, planet.userData.discoveryGlow - dt * 1.2)
         const burstGlow = planet.userData.discoveryGlow
-        const targetScale = focused ? 1.32 : 1 + Math.min(0.18, burstGlow * 0.05)
-        planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, targetScale, focused ? 0.18 : 0.08))
-        const materialBrightness = planet.userData.discovered
-          ? focused
-            ? 1.2 * visibilityBoost
-            : 0.88 * visibilityBoost
-          : scopeAmount
-            ? focused
-              ? 0.46 * visibilityBoost
-              : 0.06 * Math.min(visibilityBoost, 1.12)
-            : (0.018 + Math.min(0.04, burstGlow * 0.02)) * Math.min(visibilityBoost, 1.08)
-        planetTint.setRGB(materialBrightness, materialBrightness, materialBrightness)
-        planet.material.color.lerp(planetTint, focused ? 0.24 : 0.12)
-        const fullBrightShell = planet.userData.fullBrightShell
-        const shellOpacity = Math.min(
-          1,
-          (planet.userData.discovered
-            ? focused
-              ? 0.28
-              : 0.18
-            : scopeAmount && focused
-              ? 0.04
-              : Math.min(0.025, burstGlow * 0.02)) * visibilityBoost,
-        )
-        fullBrightShell.material.opacity = THREE.MathUtils.lerp(
-          fullBrightShell.material.opacity,
-          shellOpacity,
-          focused ? 0.18 : 0.12,
-        )
-        fullBrightShell.scale.setScalar(planet.scale.x * (planet.userData.discovered ? 1.035 : 1.015))
-        planet.rotation.y += dt * (0.05 + index * 0.01)
-        planet.userData.atmosphere.material.opacity = THREE.MathUtils.lerp(
-          planet.userData.atmosphere.material.opacity,
-          scopeAmount
-            ? focused
-              ? 0.22
-              : planet.userData.discovered
-                ? 0.2
-                : 0.025
-            : planet.userData.discovered
-              ? Math.min(0.32, 0.2 + burstGlow * 0.05)
-              : Math.min(0.035, burstGlow * 0.035),
-          0.1,
-        )
-
-        const ring = planetRings[index]
-        ring.lookAt(camera.position)
-        ring.material.opacity = THREE.MathUtils.lerp(
-          ring.material.opacity,
-          planet.userData.discovered
-            ? focused
-              ? 0.15
-              : 0.15
-            : scopeAmount
-              ? focused
-                ? 0.15
-                : 0.025
-              : Math.min(0.04, burstGlow * 0.025),
-          0.1,
-        )
-        ring.scale.setScalar(
-          (planet.userData.discovered ? 1.62 : focused ? 1.24 : 1) +
-            Math.sin(elapsed * 2.2 + index) * 0.055 +
-            Math.min(0.18, burstGlow * 0.04),
-        )
-
+        const blend = 1 - Math.exp(-dt * 5)
+        planet.scale.setScalar(THREE.MathUtils.lerp(planet.scale.x, focused ? 1.025 : 1, blend))
+        const inspecting = orbitPlanet === planet
+        const skyBrightness = inspecting ? 1 : skyElevationBrightness((planet.position.y - camera.position.y) / camera.position.distanceTo(planet.position))
+        planet.material.userData.skyBrightness.value = THREE.MathUtils.damp(planet.material.userData.skyBrightness.value, skyBrightness, 5, dt)
+        const companions = planet.userData.companions
+        const arrivalDistance = companions.outerRadius / Math.sin(angularRadius)
+        const companionFade = orbit.active
+          ? companionOpacity(camera.position.distanceTo(planet.position), arrivalDistance) * smoothstep(0, 12, orbit.distanceFromCamp)
+          : 0
+        companions.update(orbit.active ? dt : 0, companionFade, reducedMotion)
+        const closeDetail = inspecting ? 1 - smoothstep(planetData.radius * 7, planetData.radius * 24, camera.position.distanceTo(planet.position)) : 0
+        planet.material.userData.detail.value = THREE.MathUtils.damp(planet.material.userData.detail.value, closeDetail, 4, dt)
+        const clouds = planet.userData.clouds
+        if (clouds) {
+          clouds.material.opacity = planet.material.userData.detail.value * 0.52
+          clouds.visible = clouds.material.opacity > 0.001
+          clouds.scale.copy(planet.scale)
+          if (!reducedMotion) clouds.rotation.y += dt * (0.018 + index * 0.002)
+        }
+        const spotted = focused && scopeAmount
+        const brightness = inspecting ? 1.45 : scopeAmount ? 1.7 : planet.userData.discovered ? 0.95 : 0.62
+        planetTint.setRGB(brightness, brightness, brightness)
+        planet.material.color.lerp(planetTint, blend)
+        planet.material.emissiveIntensity = THREE.MathUtils.lerp(planet.material.emissiveIntensity, inspecting ? 0.72 : spotted ? 1.35 : scopeAmount ? 0.65 : planet.userData.discovered ? 0.28 : 0.12, blend)
+        if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
+        const atmosphere = planet.userData.atmosphere
+        atmosphere.scale.copy(planet.scale)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.32 : scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
-          decorRing.material.opacity = THREE.MathUtils.lerp(
-            decorRing.material.opacity,
-            planet.userData.discovered
-              ? focused
-                ? 0.6
-                : 0.4
-              : scopeAmount
-                ? focused
-                  ? 0.18
-                  : 0.03
-                : Math.min(0.03, burstGlow * 0.02),
-            0.1,
-          )
-          decorRing.rotation.z += dt * 0.035
+          decorRing.scale.copy(planet.scale)
+          decorRing.material.emissiveIntensity = THREE.MathUtils.damp(decorRing.material.emissiveIntensity, inspecting ? 0.22 : 0, 5, dt)
+          decorRing.material.opacity = THREE.MathUtils.lerp(decorRing.material.opacity, inspecting ? 1 : scopeAmount ? 0.94 : planet.userData.discovered ? 0.6 : 0.4, blend)
         }
       })
 
-      if (elapsed > 2.9 && !hasSetIgnited) {
-        hasSetIgnited = true
-        setIgnited(true)
+      const connector = connectorRef.current
+      if (connector) {
+        const visible = orbit.phase === 'orbit' && orbitPlanet && panelBounds
+        connector.style.opacity = visible ? '0.65' : '0'
+        if (visible) {
+          if (!orbitPlanet.userData.menuAnchor) {
+            // Choose a visible location once, then store it in the globe's local
+            // coordinates so it follows the same terrain as the planet rotates.
+            const angle = Math.random() * Math.PI * 2
+            const radius = 0.35 + Math.random() * 0.4
+            projected.set(Math.cos(angle) * radius, Math.sin(angle) * radius, Math.sqrt(1 - radius ** 2))
+              .applyQuaternion(camera.quaternion)
+              .multiplyScalar(discovery.radius * orbitPlanet.scale.x)
+              .add(orbitPlanet.position)
+            // Keep the fixed landmark on the actual surface, including crater bowls.
+            orbitPlanet.updateWorldMatrix(true, false)
+            anchorNormal.copy(projected).sub(orbitPlanet.position).normalize()
+            anchorView.copy(orbitPlanet.position).addScaledVector(anchorNormal, discovery.radius * 1.1)
+            raycaster.set(anchorView, anchorNormal.negate())
+            const surfaceHit = raycaster.intersectObject(orbitPlanet, false)[0]
+            if (surfaceHit) projected.copy(surfaceHit.point)
+            orbitPlanet.userData.menuAnchor = orbitPlanet.worldToLocal(projected.clone())
+          }
+          orbitPlanet.localToWorld(projected.copy(orbitPlanet.userData.menuAnchor))
+          anchorNormal.copy(projected).sub(orbitPlanet.position).normalize()
+          anchorView.copy(camera.position).sub(projected).normalize()
+          // Fade behind the horizon instead of attaching to a different location.
+          connector.style.opacity = String(0.65 * smoothstep(0, 0.16, anchorNormal.dot(anchorView)))
+          projected.project(camera)
+          const startX = mobile ? panelBounds.left + panelBounds.width / 2 : panelBounds.right
+          const startY = mobile ? panelBounds.top : panelBounds.top + Math.min(160, panelBounds.height / 2)
+          const endX = (projected.x + 1) * width / 2
+          const endY = (1 - projected.y) * height / 2
+          connector.querySelector('path').setAttribute('d', mobile
+            ? `M${startX},${startY} L${startX},${endY + 16} L${endX},${endY}`
+            : `M${startX},${startY} L${endX - 24},${startY} L${endX},${endY}`)
+          const dot = connector.querySelector('circle')
+          dot.setAttribute('cx', endX)
+          dot.setAttribute('cy', endY)
+        }
       }
 
       renderer.render(scene, camera)
+
+      if (!hasStartedIntro) {
+        hasStartedIntro = true
+        setSceneReady(true)
+        setPlanetPortraits(portraits)
+      }
     }
 
     clampPlayer()
@@ -2376,97 +2193,98 @@ export default function App() {
       }
       mount.removeEventListener('pointerdown', onPointerDown)
       mount.removeEventListener('pointermove', onPointerMove)
-      mount.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointerup', onPointerUp)
+      mount.removeEventListener('pointercancel', onBlur)
       mount.removeEventListener('pointerleave', onPointerLeave)
       mount.removeEventListener('contextmenu', onContextMenu)
+      mount.removeEventListener('wheel', onWheel)
+      mount.removeEventListener('gesturestart', onGestureStart)
+      mount.removeEventListener('gesturechange', onGestureChange)
+      mount.removeEventListener('gestureend', onGestureEnd)
       window.removeEventListener('pointermove', onPointerHover)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('resize', resize)
+      motionPreference.removeEventListener('change', updateMotionPreference)
 
       if (mount.contains(renderer.domElement)) {
         mount.removeChild(renderer.domElement)
       }
       disposeScene(scene, renderer)
     }
-  }, [revealDiscovery, setScopeActive])
+  }, [closeDiscovery, revealDiscovery, setScopeActive])
 
   return (
     <main
-      className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${scopeHoldProgress > 0 ? 'is-scope-locking' : ''} ${
+      data-camera-mode={orbitPhase}
+      className={`space-app ${scopeActiveState ? 'is-scoping' : ''} ${completedDiscovery ? 'scan-complete' : ''} ${
         ignited ? 'is-lit' : ''
-      } ${sidebarOpen ? 'has-sidebar' : ''}`}
+      } ${sceneReady ? 'is-ready' : ''} ${sidebarOpen ? 'has-sidebar' : ''} ${activeDiscovery ? 'has-discovery' : ''}`}
       style={{
-        '--scope-lock-scale': 1 - scopeProximity * 0.72,
-        '--scope-lock-opacity': 0.24 + scopeProximity * 0.76,
-        '--scope-open-progress': scopeHoldProgress,
         '--scope-progress-color': focusedData?.color ?? '#f2f59f',
       }}
     >
-      <div ref={mountRef} className="scene-mount" />
+      <div ref={mountRef} className="scene-mount" inert={!ignited} tabIndex={0} role="region" aria-label={orbitPhase === 'ground' ? 'Space exploration. Drag to look, use W A S D to move, and hold Space to scan. Use Field log to browse with a keyboard.' : 'Planetary orbit. Drag or use arrow keys to orbit. Press Escape to return to camp.'} />
 
-      <div className="darkness" aria-hidden="true" />
-      <div className="boot-title" aria-hidden="true">
-        logan&apos;s portfolio
+      <div className="darkness" aria-hidden="true" onAnimationEnd={(event) => {
+        if (event.animationName === 'darkness-ignition') setIgnited(true)
+      }} />
+      <div className="boot-title" aria-hidden="true" style={{ '--boot-characters': UPLINK_MESSAGE.length }}>
+        <span className="boot-text">{UPLINK_MESSAGE}</span><span className="boot-cursor" />
       </div>
       <div className="vignette" aria-hidden="true" />
 
       <div ref={cursorRef} className={`reticle ${cursorPrompt ? 'is-showing-prompt' : ''}`} aria-hidden="true">
-        <span className="reticle-dot" />
         <span className="reticle-prompt">{cursorPrompt}</span>
       </div>
 
-      <header className="hud-brand">
-        <span>LOGAN ZHAO'S <strong>PORTFOLIO</strong></span>
-      </header>
+      <nav className="hud-actions" inert={!ignited} aria-label="Exploration tools">
+        <button className="mute-button audio-button" type="button" aria-pressed={audioMuted} aria-label={audioMuted ? 'Unmute music' : 'Mute music'} onClick={toggleAudioMuted}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3Z" />{audioMuted ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M16 8q5 4 0 8" />}</svg>
+        </button>
+        <button
+          ref={directoryButtonRef}
+          className="sections-button"
+          type="button"
+          aria-controls="field-log"
+          aria-expanded={sidebarOpen}
+          onClick={() => {
+            setCompletedDiscovery(null)
+            setSignPanelOpen(false)
+            setScopeActive(false)
+            setSidebarOpen((open) => !open)
+          }}
+        >
+          Field log <span aria-hidden="true">↗</span>
+        </button>
 
-      <button
-        className="sections-button"
-        type="button"
-        aria-expanded={sidebarOpen}
-        onClick={() => setSidebarOpen((open) => !open)}
-      >
-        PLANETS
-      </button>
-
-      <button
-        className="scope-button"
-        type="button"
-        aria-pressed={scopeActiveState}
-        onMouseDown={() => setScopeActive(true)}
-        onMouseUp={() => setScopeActive(false)}
-        onMouseLeave={() => setScopeActive(false)}
-        onTouchStart={(event) => {
-          event.preventDefault()
-          setScopeActive(true)
-        }}
-        onTouchEnd={() => setScopeActive(false)}
-      >
-        SCOPE
-      </button>
-
-      <button
-        className="audio-button"
-        type="button"
-        aria-pressed={audioMuted}
-        aria-label={audioMuted ? 'Unmute music' : 'Mute music'}
-        onClick={toggleAudioMuted}
-      >
-        <span className="sound-icon" aria-hidden="true">
-          <span className="sound-icon-speaker" />
-          <span className="sound-icon-wave sound-icon-wave-one" />
-          <span className="sound-icon-wave sound-icon-wave-two" />
-          <span className="sound-icon-slash" />
-        </span>
-      </button>
+        <button
+          className="scope-button"
+          type="button"
+          aria-pressed={scopeActiveState}
+          disabled={orbitPhase === 'returning'}
+          onClick={() => orbitTargetRef.current ? closeDiscovery() : setScopeActive(!scopeActiveState)}
+        >
+          <span className="scope-icon" aria-hidden="true" /> {orbitPhase === 'returning' ? 'Returning…' : activeDiscovery ? 'Return to camp' : 'Signalscope'}
+        </button>
+      </nav>
 
       <div className="scope-overlay" aria-hidden="true">
         <div className="scope-ring" />
-        <div className="scope-lock-circle" />
-        <div className="scope-completion-band" />
+        <svg ref={scopeSignalRef} className="scope-signal" viewBox="0 0 100 100">
+          <g className="signal-half signal-half-left"><path d="M50 6a44 44 0 0 0 0 88" /></g>
+          <g className="signal-half signal-half-right"><path d="M50 6a44 44 0 0 1 0 88" /></g>
+          <circle ref={progressCircleRef} className="scope-progress" cx="50" cy="50" r="44" pathLength="1" transform="rotate(-90 50 50)" />
+        </svg>
         <div className="scope-crosshair" />
       </div>
+
+      {completedDiscovery && (
+        <div key={completedDiscovery} className="discovery-confirmation" role="status" style={{ '--signal-color': DISCOVERY_BY_ID[completedDiscovery].color }} onAnimationEnd={() => setCompletedDiscovery(null)}>
+          <span>Signal located</span><strong>{DISCOVERY_BY_ID[completedDiscovery].world}</strong>
+        </div>
+      )}
 
       {scopeActiveState && (
         <div className="signal-readout" style={{ '--signal-color': focusedData?.color ?? '#f7f2d6' }}>
@@ -2475,29 +2293,45 @@ export default function App() {
         </div>
       )}
 
-      <div className={`controls-hud ${controlsVisible ? 'is-visible' : ''}`} aria-label="Controls">
-        <span>DRAG LOOK | </span>
-        <span>WASD MOVE | </span>
-        <span>SPACE TO SCOPE IN</span>
-      </div>
-
-      <aside className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Sign instructions">
-        <button className="sign-help-close" type="button" onClick={() => setSignPanelOpen(false)} aria-label="Close sign">
-          x
+      <aside id="explorer-guide" className={`sign-help-panel ${signPanelOpen ? 'is-open' : ''}`} aria-label="Explorer guide" aria-hidden={!signPanelOpen} inert={!signPanelOpen}>
+        <button ref={helpCloseRef} className="sign-help-close" type="button" onClick={() => {
+          setSignPanelOpen(false)
+          directoryButtonRef.current?.focus({ preventScroll: true })
+        }} aria-label="Close sign">
+          ×
         </button>
-        <h2>Controls</h2>
-        <p>Hold Space, right mouse, or the Scope button to scan the sky.</p>
-        <p>Aim the scope at a signal until a planet wakes up, then click discovered planets to open portfolio sections.</p>
-        <p>The PLANETS button lists every destination for easier portfolio access.</p>
+        <span className="panel-eyebrow">FIELD MANUAL / 01</span>
+        <h2>A little curiosity goes a long way.</h2>
+        <p>Drag to look around. Use WASD or arrow keys to walk around the campfire.</p>
+        <p>Hold Space or the right mouse button to scan. On touch screens, tap Signalscope, then drag to aim.</p>
+        <p>Keep a planet in the center of the scope to travel into orbit. Drag or use arrow keys to explore, then close the analysis to return to camp. Field log takes you directly to any destination.</p>
+        <p>Click the phonograph to change the music. Press Escape to close a panel.</p>
       </aside>
 
       <PortfolioSidebar
         open={sidebarOpen}
         activeId={activeDiscovery}
-        onSelect={selectDiscovery}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <Panel discovery={activeData} onClose={() => setActiveDiscovery(null)} />
+        discoveredIds={discoveredIds}
+        portraits={planetPortraits}
+        onSelect={revealDiscovery}
+        onClose={() => {
+          setSidebarOpen(false)
+          directoryButtonRef.current?.focus({ preventScroll: true })
+        }}
+      >
+        <div className="log-tools">
+          <button className="help-button" type="button" aria-controls="explorer-guide" onClick={() => {
+            setSidebarOpen(false)
+            setSignPanelOpen(true)
+          }}>Controls</button>
+          <a href="/">Back to portfolio ↗</a>
+        </div>
+      </PortfolioSidebar>
+      <svg ref={connectorRef} className="analysis-connector" aria-hidden="true" style={{ color: activeData?.color }}><path /><circle r="3" /></svg>
+      <Panel panelRef={panelRef} discovery={activeData} closing={discoveryClosing} onClose={closeDiscovery} onExited={() => {
+        setActiveDiscovery(null)
+        setDiscoveryClosing(false)
+      }} />
     </main>
   )
 }
