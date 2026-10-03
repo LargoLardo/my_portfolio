@@ -838,7 +838,7 @@ export default function App() {
 
     for (let i = 0; i < starCount; i += 1) {
       const theta = starRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(-0.985, 0.985, starRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.985, 1, starRand()))
       const radius = starRadiusConst + starRand() * starRadiusConst / 2
       const y = Math.cos(phi) * radius
       const x = Math.sin(phi) * Math.cos(theta) * radius
@@ -881,7 +881,7 @@ export default function App() {
 
     for (let i = 0; i < anchorStarCount; i += 1) {
       const theta = anchorRand() * Math.PI * 2
-      const phi = Math.acos(THREE.MathUtils.lerp(-0.98, 0.98, anchorRand()))
+      const phi = Math.acos(THREE.MathUtils.lerp(-0.98, 1, anchorRand()))
       const radius = anchorStarRadiusConst + anchorRand() * anchorStarRadiusConst / 2
       const y = Math.cos(phi) * radius
       const twinkle = 1.6 + anchorRand() * 1.2
