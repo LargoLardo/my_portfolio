@@ -4,7 +4,7 @@ import App from './App.jsx'
 import MinimalPortfolio from './MinimalPortfolio.jsx'
 import './styles.css'
 
-if (location.pathname === '/current') {
+if (location.pathname === '/space') {
   try {
     localStorage.setItem('portfolio-space-visited', 'true')
   } catch {
@@ -18,6 +18,6 @@ if (location.pathname === '/current') {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    {location.pathname === '/current' ? <App /> : <MinimalPortfolio />}
+    {location.pathname === '/space' ? <App /> : <MinimalPortfolio />}
   </StrictMode>,
 )

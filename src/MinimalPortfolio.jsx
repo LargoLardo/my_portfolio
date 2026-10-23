@@ -426,7 +426,7 @@ export default function MinimalPortfolio() {
                 <span className="title-letter" aria-hidden="true" key={index}><span className="title-letter-face">{letter}</span></span>
               ))}
             </h1>
-            <a className="saturn-link" href="/current" ref={orbitLinkRef} aria-label="Enter Logan's immersive space portfolio">
+            <a className="saturn-link" href="/space" ref={orbitLinkRef} aria-label="Enter Logan's immersive space portfolio">
               <span className="saturn-attention-ring" aria-hidden="true" />
               <span className="saturn-ring" />
               <span className="saturn-planet" />
