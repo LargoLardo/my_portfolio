@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness, bakeNebulaSky, makeHorizonGlowMaterial } from './spaceMaterials.js'
+import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeScatteringAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness, bakeNebulaSky, makeHorizonGlowMaterial } from './spaceMaterials.js'
+import { createCampAmbience, createDistantSun } from './spaceAmbience.js'
 import { createSpaceTextures } from './spaceTextures.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
@@ -193,7 +194,7 @@ const DISCOVERIES = [
     hex: 0xb8ef6a,
     position: [72, 34, -20],
     radius: 2.4,
-    palette: ['#13200c', '#3b5a1c', '#8fbf3a', '#e4f5b0'],
+    palette: ['#0e160b', '#2c4220', '#64843a', '#bccf8e'],
     planetStyle: { spots: 4 },
     body: [
       'Built with a team at Hack the North 2026, Advolve turns a product image and brief into generations of ad creatives through selection, crossover, and mutation.',
@@ -1325,6 +1326,10 @@ export default function App() {
       }),
     )
     campfire.add(sparks)
+    const ambience = createCampAmbience(particleTexture, terrainHeight)
+    scene.add(ambience.group)
+    const sun = createDistantSun(particleTexture, sunlight.position)
+    scene.add(sun.group)
 
     const planetMeshes = []
     const planetDecorRings = []
@@ -1352,8 +1357,8 @@ export default function App() {
       planetMeshes.push(planet)
 
       const atmosphere = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.025, 48, 32),
-        withSkyBrightness(makeAtmosphereMaterial(discovery.hex), skyBrightness),
+        new THREE.SphereGeometry(discovery.radius * 1.06, 64, 40),
+        withSkyBrightness(makeScatteringAtmosphereMaterial(discovery.hex), skyBrightness),
       )
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
@@ -1483,7 +1488,7 @@ export default function App() {
     }
 
     const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
-    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
+    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group, sun.group].includes(object))
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
     const anchorNormal = new THREE.Vector3()
@@ -2037,6 +2042,8 @@ export default function App() {
       camera.updateMatrixWorld()
 
       stars.position.copy(camera.position)
+      sun.follow(camera)
+      ambience.update(reducedMotion ? 0 : elapsed, dt, ignition, renderer.domElement.height / 2, reducedMotion)
       anchorStars.position.copy(camera.position)
       comet.update(elapsed, dt, camera, reducedMotion)
       waveAge += dt
@@ -2157,7 +2164,7 @@ export default function App() {
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
-        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.32 : scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.55 : scopeAmount ? 0.4 : planet.userData.discovered ? 0.16 : 0.08) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
           decorRing.scale.copy(planet.scale)

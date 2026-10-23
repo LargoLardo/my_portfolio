@@ -208,14 +208,16 @@ export function bakeNebulaSky(renderer, size = 1024) {
         float glow = exp(-pow(latitude / 0.42, 2.0));
         float dust = planetFbm(d * 8.0 + warp * 2.0);
         // Fine mottling reads as unresolved stars instead of smooth fog.
-        float starClouds = pow(planetFbm(d * 160.0 + dust * 3.0), 2.4) * 1.9;
+        float starClouds = pow(planetFbm(d * 160.0 + dust * 3.0), 2.4) * 1.4;
         float lanes = smoothstep(0.44, 0.7, planetFbm(d * 13.0 - warp * 3.0)) * smoothstep(0.15, 0.9, band);
         float bulge = pow(max(dot(d, normalize(vec3(-0.62, 0.34, -0.7))), 0.0), 6.0);
         vec3 color = mix(vec3(0.06, 0.06, 0.1), vec3(0.26, 0.19, 0.13), dust) * (band * (0.25 + dust * 0.6 + starClouds) + bulge * 0.45) * (1.0 - lanes * 0.85);
         color += vec3(0.025, 0.03, 0.05) * glow;
         // Two faint nebulae, one dusty rose and one teal, keep deep space from reading as flat black.
-        color += vec3(0.16, 0.045, 0.075) * smoothstep(0.56, 0.86, planetFbm(d * 2.3 + 13.0)) * 0.55;
-        color += vec3(0.02, 0.085, 0.1) * smoothstep(0.58, 0.88, planetFbm(d * 2.7 - 5.0)) * 0.6;
+        // Warp the lookup so the value-noise grid never shows as straight edges.
+        vec3 drift = vec3(planetFbm(d * 1.7 + 3.0), planetFbm(d * 1.7 + 11.0), planetFbm(d * 1.7 + 19.0)) - 0.5;
+        color += vec3(0.16, 0.045, 0.075) * smoothstep(0.54, 0.86, planetFbm(d.zxy * 2.3 + drift * 2.2 + 13.0)) * 0.55;
+        color += vec3(0.02, 0.085, 0.1) * smoothstep(0.56, 0.88, planetFbm(d.yzx * 2.7 + drift * 2.6 - 5.0)) * 0.6;
         gl_FragColor = vec4(color * 0.42, 1.0);
       }`,
   })
@@ -438,6 +440,36 @@ export function makeAtmosphereMaterial(color) {
         float rim = pow(1.0 - max(dot(normalize(vNormal), normalize(cameraPosition - vPosition)), 0.0), 3.2);
         float light = 0.18 + 0.82 * max(dot(normalize(vNormal), normalize(vec3(-35.0, 45.0, 25.0))), 0.0);
         gl_FragColor = vec4(tint, rim * light * opacity);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
+}
+
+// A planet's air: brighter on the day side, a warm band along the terminator, and a glow through the limb when backlit.
+export function makeScatteringAtmosphereMaterial(color) {
+  return new THREE.ShaderMaterial({
+    uniforms: { tint: { value: new THREE.Color(color) }, opacity: { value: 0.35 } },
+    vertexShader: `varying vec3 vNormal; varying vec3 vPosition;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        vPosition = world.xyz;
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }`,
+    fragmentShader: `uniform vec3 tint; uniform float opacity; varying vec3 vNormal; varying vec3 vPosition;
+      void main() {
+        vec3 n = normalize(vNormal), view = normalize(cameraPosition - vPosition), sun = normalize(vec3(-35.0, 45.0, 25.0));
+        float rim = pow(1.0 - max(dot(n, view), 0.0), 2.4);
+        float day = dot(n, sun);
+        float lit = smoothstep(-0.3, 0.55, day);
+        float terminator = exp(-pow(day / 0.2, 2.0));
+        float backlit = pow(max(dot(-view, sun), 0.0), 5.0);
+        vec3 sky = mix(tint, vec3(1.0), 0.15);
+        vec3 color = sky * lit + vec3(1.0, 0.5, 0.26) * terminator * 0.7 + sky * backlit * 1.6;
+        gl_FragColor = vec4(color, rim * (lit + terminator * 0.45 + backlit * 1.4) * opacity);
         #include <colorspace_fragment>
       }`,
     transparent: true,
