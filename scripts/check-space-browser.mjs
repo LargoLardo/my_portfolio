@@ -1,11 +1,11 @@
-// With the dev server running, open /current in a disposable Chrome launched with
+// With the dev server running, open /space in a disposable Chrome launched with
 // --remote-debugging-port=9224 --user-data-dir=/tmp/portfolio-browser-check
 // Run: node scripts/check-space-browser.mjs [Chrome debugging URL]
 import assert from 'node:assert/strict'
 
 const tabs = await (await fetch(`${process.argv[2] ?? 'http://127.0.0.1:9224'}/json`)).json()
-const tab = tabs.find(page => new URL(page.url).pathname === '/current')
-assert.ok(tab, 'Open the space page at /current first')
+const tab = tabs.find(page => new URL(page.url).pathname === '/space')
+assert.ok(tab, 'Open the space page at /space first')
 const socket = new WebSocket(tab.webSocketDebuggerUrl)
 await new Promise(resolve => socket.addEventListener('open', resolve, { once: true }))
 let serial = 0

@@ -94,6 +94,35 @@ function crossesRect(from, to, rect) {
   return start <= end
 }
 
+// Five-row pixel glyphs, small enough for "LOGAN" to fit across a phone's 23 columns.
+const glyphs = {
+  L: ['#..', '#..', '#..', '#..', '###'],
+  O: ['.#.', '#.#', '#.#', '#.#', '.#.'],
+  G: ['.##', '#..', '#.#', '#.#', '.##'],
+  A: ['.#.', '#.#', '###', '#.#', '#.#'],
+  N: ['#..#', '##.#', '#.##', '#..#', '#..#'],
+  Z: ['###', '..#', '.#.', '#..', '###'],
+  H: ['#.#', '#.#', '###', '#.#', '#.#'],
+  ' ': ['.', '.', '.', '.', '.'],
+}
+
+// Cell indices spelling the name in the middle of the board.
+function nameCells(columns, rows) {
+  const lines = columns < 43 ? ['LOGAN', 'ZHAO'] : ['LOGAN ZHAO']
+  const top = Math.floor(rows / 2) - Math.ceil((lines.length * 7 - 2) / 2)
+  return lines.flatMap((line, lineIndex) => {
+    const width = [...line].reduce((sum, letter) => sum + glyphs[letter][0].length + 1, -1)
+    let left = Math.floor((columns - width) / 2)
+    return [...line].flatMap((letter) => {
+      const cells = glyphs[letter].flatMap((row, y) => [...row].flatMap((pixel, x) => (
+        pixel === '#' ? [(top + lineIndex * 7 + y) * columns + left + x] : []
+      )))
+      left += glyphs[letter][0].length + 1
+      return cells
+    })
+  })
+}
+
 function LifeCanvas({ running, boardRef }) {
   const canvasRef = useRef(null)
   const drawingRef = useRef(false)
@@ -109,6 +138,8 @@ function LifeCanvas({ running, boardRef }) {
     let frame
     let lastStep = 0
     let lastDraw = 0
+    let wokeAt = 0
+    let wasRunning = false
 
     const resize = () => {
       const cellSize = innerWidth < 700 ? 17 : 22
@@ -141,9 +172,13 @@ function LifeCanvas({ running, boardRef }) {
     const draw = (time = 0) => {
       const state = boardRef.current
       if (!state) return
-      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
+      // Ease out of a standstill: slower steps with longer cross-fades for the first 1.2s.
+      if (runningRef.current && !wasRunning) wokeAt = time
+      wasRunning = runningRef.current
+      const warmup = Math.max(0, 1 - (time - wokeAt) / 1200) ** 2
+      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / (90 + 210 * warmup))
       lastDraw = time
-      if (runningRef.current && time - lastStep > 130) {
+      if (runningRef.current && time - lastStep > 163 + 240 * warmup) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
@@ -198,6 +233,9 @@ function LifeCanvas({ running, boardRef }) {
 
 export default function MinimalPortfolio() {
   const [running, setRunning] = useState(true)
+  // The name assembles alone on the board, then life spreads out from it.
+  const [opening, setOpening] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'done' : 'name')
+  const intro = opening === 'name'
   const [activeProject, setActiveProject] = useState(null)
   const boardRef = useRef(null)
   const pageRef = useRef(null)
@@ -207,6 +245,49 @@ export default function MinimalPortfolio() {
   const projectDialogRef = useRef(null)
 
   useEffect(() => {
+    if (opening === 'done') return
+    const state = boardRef.current
+    const { columns, rows, cellSize } = state
+    const position = index => [(index % columns + 0.5) * cellSize, (Math.floor(index / columns) + 0.5) * cellSize]
+    let births = []
+    if (opening === 'name') {
+      state.cells.fill(0)
+      state.levels.fill(0)
+      // Sweep the name in left to right with a ragged edge.
+      births = nameCells(columns, rows).map(index => [index, (position(index)[0] / innerWidth + Math.random() * 0.12) * 700])
+    } else {
+      // Seed the usual random board in a ring that grows out from the centre.
+      for (let index = 0; index < columns * rows; index += 1) {
+        if (Math.random() >= 0.14) continue
+        const [x, y] = position(index)
+        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 1750 + Math.random() * 100])
+      }
+    }
+    births.sort((a, b) => a[1] - b[1])
+    let frame
+    let hold
+    let start
+    let next = 0
+    const step = (time) => {
+      if (boardRef.current !== state) return setOpening('spread')
+      start ??= time
+      while (next < births.length && births[next][1] <= time - start) state.cells[births[next++][0]] = 1
+      if (next < births.length) frame = requestAnimationFrame(step)
+      else if (opening === 'name') hold = setTimeout(() => setOpening('spread'), 550)
+    }
+    frame = requestAnimationFrame(step)
+    const skip = () => setOpening('spread')
+    const skipEvents = opening === 'name' ? ['pointerdown', 'keydown', 'wheel', 'touchmove'] : []
+    skipEvents.forEach(type => addEventListener(type, skip, { passive: true }))
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(hold)
+      skipEvents.forEach(type => removeEventListener(type, skip))
+    }
+  }, [opening])
+
+  useEffect(() => {
+    if (intro) return
     const link = orbitLinkRef.current
     const ring = link.querySelector('.saturn-attention-ring')
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -256,7 +337,7 @@ export default function MinimalPortfolio() {
       window.removeEventListener('storage', checkVisit)
       reducedMotion.removeEventListener('change', cancel)
     }
-  }, [])
+  }, [intro])
 
   useEffect(() => {
     if (activeProject) {
@@ -339,8 +420,8 @@ export default function MinimalPortfolio() {
   }, [])
 
   return (
-    <main className="minimal-portfolio" ref={pageRef}>
-      <LifeCanvas running={running} boardRef={boardRef} />
+    <main className={`minimal-portfolio${intro ? ' is-intro' : ''}`} ref={pageRef}>
+      <LifeCanvas running={running && !intro} boardRef={boardRef} />
       <div className="life-shade" />
 
       <section className="portfolio-card" ref={cardRef}>
@@ -351,7 +432,7 @@ export default function MinimalPortfolio() {
                 <span className="title-letter" aria-hidden="true" key={index}><span className="title-letter-face">{letter}</span></span>
               ))}
             </h1>
-            <a className="saturn-link" href="/current" ref={orbitLinkRef} aria-label="Enter Logan's immersive space portfolio">
+            <a className="saturn-link" href="/space" ref={orbitLinkRef} aria-label="Enter Logan's immersive space portfolio">
               <span className="saturn-attention-ring" aria-hidden="true" />
               <span className="saturn-ring" />
               <span className="saturn-planet" />
