@@ -227,7 +227,9 @@ function LifeCanvas({ running, boardRef }) {
 
 export default function MinimalPortfolio() {
   const [running, setRunning] = useState(true)
-  const [intro, setIntro] = useState(() => !matchMedia('(prefers-reduced-motion: reduce)').matches)
+  // The name assembles alone on the board, then life spreads out from it.
+  const [opening, setOpening] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'done' : 'name')
+  const intro = opening === 'name'
   const [activeProject, setActiveProject] = useState(null)
   const boardRef = useRef(null)
   const pageRef = useRef(null)
@@ -237,31 +239,42 @@ export default function MinimalPortfolio() {
   const projectDialogRef = useRef(null)
 
   useEffect(() => {
-    if (!intro) return
+    if (opening === 'done') return
     const state = boardRef.current
-    state.cells.fill(0)
-    state.levels.fill(0)
+    const { columns, rows, cellSize } = state
+    const position = index => [(index % columns + 0.5) * cellSize, (Math.floor(index / columns) + 0.5) * cellSize]
+    let births = []
+    if (opening === 'name') {
+      state.cells.fill(0)
+      state.levels.fill(0)
+      // Sweep the name in left to right with a ragged edge.
+      births = nameCells(columns, rows).map(index => [index, (position(index)[0] / innerWidth + Math.random() * 0.12) * 700])
+    } else {
+      // Seed the usual random board in a ring that grows out from the centre.
+      for (let index = 0; index < columns * rows; index += 1) {
+        if (Math.random() >= 0.14) continue
+        const [x, y] = position(index)
+        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 1400 + Math.random() * 80])
+      }
+    }
+    births.sort((a, b) => a[1] - b[1])
     let frame
     let hold
-    // Sweep the name in left to right with a ragged edge.
-    const name = nameCells(state.columns, state.rows)
-      .map(index => [index, (index % state.columns) / state.columns + Math.random() * 0.12])
-      .sort((a, b) => a[1] - b[1])
     let start
-    const reveal = (time) => {
-      if (boardRef.current !== state) return setIntro(false)
+    let next = 0
+    const step = (time) => {
+      if (boardRef.current !== state) return setOpening('spread')
       start ??= time
-      const progress = Math.min(1, (time - start) / 750)
-      for (let i = 0; i < Math.ceil(progress * name.length); i += 1) state.cells[name[i][0]] = 1
-      if (progress < 1) frame = requestAnimationFrame(reveal)
-      else hold = setTimeout(() => setIntro(false), 550)
+      while (next < births.length && births[next][1] <= time - start) state.cells[births[next++][0]] = 1
+      if (next < births.length) frame = requestAnimationFrame(step)
+      else if (opening === 'name') hold = setTimeout(() => setOpening('spread'), 550)
     }
-    frame = requestAnimationFrame(reveal)
+    frame = requestAnimationFrame(step)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(hold)
     }
-  }, [intro])
+  }, [opening])
 
   useEffect(() => {
     if (intro) return
