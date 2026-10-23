@@ -138,6 +138,8 @@ function LifeCanvas({ running, boardRef }) {
     let frame
     let lastStep = 0
     let lastDraw = 0
+    let wokeAt = 0
+    let wasRunning = false
 
     const resize = () => {
       const cellSize = innerWidth < 700 ? 17 : 22
@@ -170,9 +172,13 @@ function LifeCanvas({ running, boardRef }) {
     const draw = (time = 0) => {
       const state = boardRef.current
       if (!state) return
-      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
+      // Ease out of a standstill: slower steps with longer cross-fades for the first 1.2s.
+      if (runningRef.current && !wasRunning) wokeAt = time
+      wasRunning = runningRef.current
+      const warmup = Math.max(0, 1 - (time - wokeAt) / 1200) ** 2
+      const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / (90 + 210 * warmup))
       lastDraw = time
-      if (runningRef.current && time - lastStep > 163) {
+      if (runningRef.current && time - lastStep > 163 + 240 * warmup) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
