@@ -74,7 +74,7 @@ export function createCampAmbience(particleTexture, groundHeight, random = Math.
   motes.frustumCulled = false
 
   // Cold mist pooled in the low ground beyond the firelight.
-  const mistCount = 26
+  const mistCount = 16
   const mist = makePuffs(mistCount, particleTexture, THREE.NormalBlending)
   const mistHome = Array.from({ length: mistCount }, () => ({
     angle: random() * Math.PI * 2, radius: 6 + random() * 11, size: 5 + random() * 5, phase: random() * 100,

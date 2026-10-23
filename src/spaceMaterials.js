@@ -249,7 +249,9 @@ export function makeHorizonGlowMaterial() {
         float sunward = dot(normalize(d.xz + 1e-4), normalize(vec2(-0.8, 0.6))) * 0.5 + 0.5;
         vec3 color = mix(vec3(0.02, 0.05, 0.075), vec3(0.11, 0.06, 0.035), sunward * sunward);
         float extinction = exp(-height / 0.16) * step(-0.02, d.y) * 0.8;
-        gl_FragColor = vec4(color * haze, extinction);
+        // Below the horizon, match the fogged ground so the edge of the terrain never shows on lift-off.
+        float below = smoothstep(0.0, -0.05, d.y);
+        gl_FragColor = vec4(color * haze * (1.0 - below), max(extinction, below));
         #include <colorspace_fragment>
       }`,
   })

@@ -1918,7 +1918,7 @@ export default function App() {
       const firePulse = reducedMotion ? 0.85 : 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
-      ambient.intensity = 0.025 + ignition * 0.01
+      ambient.intensity = 0.05 + ignition * 0.015
       fireLight.intensity = ignition * (10.5 + firePulse * 2.2)
       lowGlow.intensity = ignition * (0.55 + firePulse * 0.3)
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
