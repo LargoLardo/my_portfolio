@@ -172,7 +172,7 @@ function LifeCanvas({ running, boardRef }) {
       if (!state) return
       const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
       lastDraw = time
-      if (runningRef.current && time - lastStep > 130) {
+      if (runningRef.current && time - lastStep > 217) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
