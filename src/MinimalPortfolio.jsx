@@ -94,22 +94,33 @@ function crossesRect(from, to, rect) {
   return start <= end
 }
 
-// Cell indices covering the name, drawn with the title font at one pixel per cell.
-function rasterizeName(columns, rows) {
-  const lines = columns < 48 ? ['LOGAN', 'ZHAO'] : ['LOGAN ZHAO']
-  const canvas = document.createElement('canvas')
-  canvas.width = columns
-  canvas.height = rows
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  context.font = '100px "Jersey 10", Impact, sans-serif'
-  const width = Math.max(...lines.map(line => context.measureText(line).width))
-  const size = Math.min(84 * columns / width, rows * 0.5 / lines.length)
-  context.font = `${size}px "Jersey 10", Impact, sans-serif`
-  context.textAlign = 'center'
-  context.textBaseline = 'middle'
-  lines.forEach((line, index) => context.fillText(line, columns / 2, rows / 2 + (index - (lines.length - 1) / 2) * size * 0.8))
-  const { data } = context.getImageData(0, 0, columns, rows)
-  return Array.from({ length: columns * rows }, (_, index) => index).filter(index => data[index * 4 + 3] > 110)
+// Five-row pixel glyphs, small enough for "LOGAN" to fit across a phone's 23 columns.
+const glyphs = {
+  L: ['#..', '#..', '#..', '#..', '###'],
+  O: ['.#.', '#.#', '#.#', '#.#', '.#.'],
+  G: ['.##', '#..', '#.#', '#.#', '.##'],
+  A: ['.#.', '#.#', '###', '#.#', '#.#'],
+  N: ['#..#', '##.#', '#.##', '#..#', '#..#'],
+  Z: ['###', '..#', '.#.', '#..', '###'],
+  H: ['#.#', '#.#', '###', '#.#', '#.#'],
+  ' ': ['.', '.', '.', '.', '.'],
+}
+
+// Cell indices spelling the name in the middle of the board.
+function nameCells(columns, rows) {
+  const lines = columns < 43 ? ['LOGAN', 'ZHAO'] : ['LOGAN ZHAO']
+  const top = Math.floor(rows / 2) - Math.ceil((lines.length * 7 - 2) / 2)
+  return lines.flatMap((line, lineIndex) => {
+    const width = [...line].reduce((sum, letter) => sum + glyphs[letter][0].length + 1, -1)
+    let left = Math.floor((columns - width) / 2)
+    return [...line].flatMap((letter) => {
+      const cells = glyphs[letter].flatMap((row, y) => [...row].flatMap((pixel, x) => (
+        pixel === '#' ? [(top + lineIndex * 7 + y) * columns + left + x] : []
+      )))
+      left += glyphs[letter][0].length + 1
+      return cells
+    })
+  })
 }
 
 function LifeCanvas({ running, boardRef }) {
@@ -231,31 +242,24 @@ export default function MinimalPortfolio() {
     state.cells.fill(0)
     state.levels.fill(0)
     let frame
-    let cancelled = false
-    const fontReady = Promise.race([
-      document.fonts.load('100px "Jersey 10"'),
-      new Promise(resolve => setTimeout(resolve, 600)),
-    ])
-    fontReady.then(() => {
-      if (cancelled) return
-      // Sweep the name in left to right with a ragged edge.
-      const name = rasterizeName(state.columns, state.rows)
-        .map(index => [index, (index % state.columns) / state.columns + Math.random() * 0.12])
-        .sort((a, b) => a[1] - b[1])
-      const start = performance.now()
-      const reveal = (time) => {
-        if (boardRef.current !== state) return setIntro(false)
-        const progress = Math.min(1, (time - start) / 750)
-        for (let i = 0; i < Math.ceil(progress * name.length); i += 1) state.cells[name[i][0]] = 1
-        if (progress < 1) frame = requestAnimationFrame(reveal)
-        else frame = setTimeout(() => setIntro(false), 550)
-      }
-      frame = requestAnimationFrame(reveal)
-    })
+    let hold
+    // Sweep the name in left to right with a ragged edge.
+    const name = nameCells(state.columns, state.rows)
+      .map(index => [index, (index % state.columns) / state.columns + Math.random() * 0.12])
+      .sort((a, b) => a[1] - b[1])
+    let start
+    const reveal = (time) => {
+      if (boardRef.current !== state) return setIntro(false)
+      start ??= time
+      const progress = Math.min(1, (time - start) / 750)
+      for (let i = 0; i < Math.ceil(progress * name.length); i += 1) state.cells[name[i][0]] = 1
+      if (progress < 1) frame = requestAnimationFrame(reveal)
+      else hold = setTimeout(() => setIntro(false), 550)
+    }
+    frame = requestAnimationFrame(reveal)
     return () => {
-      cancelled = true
       cancelAnimationFrame(frame)
-      clearTimeout(frame)
+      clearTimeout(hold)
     }
   }, [intro])
 
