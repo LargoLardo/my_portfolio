@@ -131,7 +131,7 @@ const DISCOVERIES = [
     signal: 'journeygoer\'s relay',
     world: 'Midnight Seed',
     title: 'Experience',
-    subtitle: 'Application Programmer, Ontario Government MPBSDP',
+    subtitle: 'Software Engineer at Shopify · Application Programmer at the Ontario Government',
     color: '#7195cd',
     hex: 0x31558f,
     position: [4, 66, -78],
@@ -139,11 +139,12 @@ const DISCOVERIES = [
     palette: ['#030815', '#17345c', '#285488', '#6e92ad'],
     planetStyle: { rings: true, ringTilt: 0.78 },
     body: [
-      'Built and supported automated QA tooling for Cognos BI reports using the IBM Cognos API and Playwright, helping validate 1,000+ reports per hour and protect reporting integrity.',
-      'Worked with Redshift, DBeaver SQL, AWS Lambda ETL, audit logs, and Python Excel automation to clean, transform, monitor, and prepare analytics data across large BI workflows.',
+      'Shopify, September to December 2026: built Ruby on Rails and SQL tools for merchant verification, data repair, and onboarding safeguards, and created PayPal remediation workflows on the Payments and Onboarding team.',
+      'Ontario Government, January to May 2026: co-developed a QA app with a team of four using the IBM Cognos API and Playwright. It validates 3,000+ reports an hour and protects database integrity.',
+      'Also built a Redshift star schema with SQL in DBeaver that helps organize 50,000+ reports, and supported AWS Lambda ETL of Cognos audit logs into Redshift for BI monitoring.',
       'Previously organized NRGHacks for 200+ attendees, led a 50+ member coding club, and designed a Rotary club website that helped increase membership.',
     ],
-    tags: ['Playwright', 'Cognos API', 'Redshift', 'AWS Lambda', 'Python', 'Leadership'],
+    tags: ['Ruby on Rails', 'SQL', 'Playwright', 'Cognos API', 'Redshift', 'AWS Lambda', 'Leadership'],
   },
   {
     id: 'education',
@@ -181,6 +182,25 @@ const DISCOVERIES = [
       'Reach me through email, LinkedIn, or GitHub if you want to talk ML, creative tools, game AI, or strange interactive projects.',
     ],
     tags: ['Badminton', 'Chess', 'Poker', 'Ultimate frisbee', 'Outer Wilds', 'logan.zhao@uwaterloo.ca', 'github.com/LargoLardo', 'linkedin.com/in/logan-zhao-328653232'],
+  },
+  {
+    id: 'advolve',
+    signal: 'evolutionary chorus',
+    world: 'Mutant Bloom',
+    title: 'Advolve',
+    subtitle: 'Evolving ad creatives with generative AI and predicted brain responses',
+    color: '#b8ef6a',
+    hex: 0xb8ef6a,
+    position: [72, 34, -20],
+    radius: 2.4,
+    palette: ['#13200c', '#3b5a1c', '#8fbf3a', '#e4f5b0'],
+    planetStyle: { spots: 4 },
+    body: [
+      'Built with a team at Hack the North 2026, Advolve turns a product image and brief into generations of ad creatives through selection, crossover, and mutation.',
+      'Uses TRIBE v2 to predict cortical responses and score candidates, guiding each round of creative evolution.',
+      'An interactive family tree tracks each ad’s ancestry, traits, and scores, backed by durable Cloudflare workflows and GPU inference on Baseten.',
+    ],
+    tags: ['Next.js', 'PyTorch', 'Cloudflare', 'Baseten', 'github.com/LargoLardo/advolve'],
   },
 ]
 
@@ -545,7 +565,7 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose, discoveredIds, po
     <aside id="field-log" className={`section-sidebar ${open ? 'is-open' : ''}`} aria-label="Field log" aria-hidden={!open} inert={!open}>
       <div className="section-sidebar-header">
         <div>
-          <span>EXPEDITION DIRECTORY / 08</span>
+          <span>EXPEDITION DIRECTORY / {String(DISCOVERIES.length).padStart(2, '0')}</span>
           <strong>Field log</strong>
         </div>
         <button ref={closeRef} type="button" onClick={onClose} aria-label="Close field log">
