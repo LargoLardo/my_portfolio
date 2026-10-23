@@ -270,9 +270,13 @@ export default function MinimalPortfolio() {
       else if (opening === 'name') hold = setTimeout(() => setOpening('spread'), 550)
     }
     frame = requestAnimationFrame(step)
+    const skip = () => setOpening('spread')
+    const skipEvents = opening === 'name' ? ['pointerdown', 'keydown', 'wheel', 'touchmove'] : []
+    skipEvents.forEach(type => addEventListener(type, skip, { passive: true }))
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(hold)
+      skipEvents.forEach(type => removeEventListener(type, skip))
     }
   }, [opening])
 
