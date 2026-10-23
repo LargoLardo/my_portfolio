@@ -254,7 +254,7 @@ export default function MinimalPortfolio() {
       for (let index = 0; index < columns * rows; index += 1) {
         if (Math.random() >= 0.14) continue
         const [x, y] = position(index)
-        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 1400 + Math.random() * 80])
+        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 2330 + Math.random() * 130])
       }
     }
     births.sort((a, b) => a[1] - b[1])
