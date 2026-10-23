@@ -94,6 +94,24 @@ function crossesRect(from, to, rect) {
   return start <= end
 }
 
+// Cell indices covering the name, drawn with the title font at one pixel per cell.
+function rasterizeName(columns, rows) {
+  const lines = columns < 48 ? ['LOGAN', 'ZHAO'] : ['LOGAN ZHAO']
+  const canvas = document.createElement('canvas')
+  canvas.width = columns
+  canvas.height = rows
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  context.font = '100px "Jersey 10", Impact, sans-serif'
+  const width = Math.max(...lines.map(line => context.measureText(line).width))
+  const size = Math.min(84 * columns / width, rows * 0.5 / lines.length)
+  context.font = `${size}px "Jersey 10", Impact, sans-serif`
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  lines.forEach((line, index) => context.fillText(line, columns / 2, rows / 2 + (index - (lines.length - 1) / 2) * size * 0.8))
+  const { data } = context.getImageData(0, 0, columns, rows)
+  return Array.from({ length: columns * rows }, (_, index) => index).filter(index => data[index * 4 + 3] > 110)
+}
+
 function LifeCanvas({ running, boardRef }) {
   const canvasRef = useRef(null)
   const drawingRef = useRef(false)
@@ -198,6 +216,7 @@ function LifeCanvas({ running, boardRef }) {
 
 export default function MinimalPortfolio() {
   const [running, setRunning] = useState(true)
+  const [intro, setIntro] = useState(() => !matchMedia('(prefers-reduced-motion: reduce)').matches)
   const [activeProject, setActiveProject] = useState(null)
   const boardRef = useRef(null)
   const pageRef = useRef(null)
@@ -207,6 +226,41 @@ export default function MinimalPortfolio() {
   const projectDialogRef = useRef(null)
 
   useEffect(() => {
+    if (!intro) return
+    const state = boardRef.current
+    state.cells.fill(0)
+    state.levels.fill(0)
+    let frame
+    let cancelled = false
+    const fontReady = Promise.race([
+      document.fonts.load('100px "Jersey 10"'),
+      new Promise(resolve => setTimeout(resolve, 600)),
+    ])
+    fontReady.then(() => {
+      if (cancelled) return
+      // Sweep the name in left to right with a ragged edge.
+      const name = rasterizeName(state.columns, state.rows)
+        .map(index => [index, (index % state.columns) / state.columns + Math.random() * 0.12])
+        .sort((a, b) => a[1] - b[1])
+      const start = performance.now()
+      const reveal = (time) => {
+        if (boardRef.current !== state) return setIntro(false)
+        const progress = Math.min(1, (time - start) / 750)
+        for (let i = 0; i < Math.ceil(progress * name.length); i += 1) state.cells[name[i][0]] = 1
+        if (progress < 1) frame = requestAnimationFrame(reveal)
+        else frame = setTimeout(() => setIntro(false), 550)
+      }
+      frame = requestAnimationFrame(reveal)
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+      clearTimeout(frame)
+    }
+  }, [intro])
+
+  useEffect(() => {
+    if (intro) return
     const link = orbitLinkRef.current
     const ring = link.querySelector('.saturn-attention-ring')
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -256,7 +310,7 @@ export default function MinimalPortfolio() {
       window.removeEventListener('storage', checkVisit)
       reducedMotion.removeEventListener('change', cancel)
     }
-  }, [])
+  }, [intro])
 
   useEffect(() => {
     if (activeProject) {
@@ -339,8 +393,8 @@ export default function MinimalPortfolio() {
   }, [])
 
   return (
-    <main className="minimal-portfolio" ref={pageRef}>
-      <LifeCanvas running={running} boardRef={boardRef} />
+    <main className={`minimal-portfolio${intro ? ' is-intro' : ''}`} ref={pageRef}>
+      <LifeCanvas running={running && !intro} boardRef={boardRef} />
       <div className="life-shade" />
 
       <section className="portfolio-card" ref={cardRef}>
