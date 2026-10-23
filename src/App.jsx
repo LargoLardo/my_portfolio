@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
+import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness, bakeNebulaSky, makeHorizonGlowMaterial } from './spaceMaterials.js'
 import { createSpaceTextures } from './spaceTextures.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
@@ -729,8 +729,10 @@ export default function App() {
     const textures = createSpaceTextures()
     let cancelled = false
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000102)
+    const nebulaSky = bakeNebulaSky(renderer)
+    scene.background = nebulaSky.texture
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), makeHorizonGlowMaterial()))
 
     const camera = new THREE.PerspectiveCamera(68, initialWidth / initialHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
@@ -2286,6 +2288,7 @@ export default function App() {
       if (mount.contains(renderer.domElement)) {
         mount.removeChild(renderer.domElement)
       }
+      nebulaSky.dispose()
       disposeScene(scene, renderer)
     }
   }, [closeDiscovery, revealDiscovery, setScopeActive])

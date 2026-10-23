@@ -191,6 +191,68 @@ const planetNoise = `
   }
 `
 
+// Paint the Milky Way and faint nebulae into a cube map once, so the sky costs one lookup per frame.
+export function bakeNebulaSky(renderer, size = 1024) {
+  const material = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: 'varying vec3 vDirection; void main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vDirection;
+      ${planetNoise}
+      void main() {
+        vec3 d = normalize(vDirection);
+        float warp = planetFbm(d * 3.0 + 7.0);
+        // A tilted galactic plane with a ragged edge and dark dust lanes through its core.
+        float latitude = dot(d, normalize(vec3(0.38, 0.8, -0.46))) + (warp - 0.5) * 0.32;
+        float band = exp(-pow(latitude / 0.16, 2.0));
+        float glow = exp(-pow(latitude / 0.42, 2.0));
+        float dust = planetFbm(d * 8.0 + warp * 2.0);
+        // Fine mottling reads as unresolved stars instead of smooth fog.
+        float starClouds = pow(planetFbm(d * 160.0 + dust * 3.0), 2.4) * 1.9;
+        float lanes = smoothstep(0.44, 0.7, planetFbm(d * 13.0 - warp * 3.0)) * smoothstep(0.15, 0.9, band);
+        float bulge = pow(max(dot(d, normalize(vec3(-0.62, 0.34, -0.7))), 0.0), 6.0);
+        vec3 color = mix(vec3(0.06, 0.06, 0.1), vec3(0.26, 0.19, 0.13), dust) * (band * (0.25 + dust * 0.6 + starClouds) + bulge * 0.45) * (1.0 - lanes * 0.85);
+        color += vec3(0.025, 0.03, 0.05) * glow;
+        // Two faint nebulae, one dusty rose and one teal, keep deep space from reading as flat black.
+        color += vec3(0.16, 0.045, 0.075) * smoothstep(0.56, 0.86, planetFbm(d * 2.3 + 13.0)) * 0.55;
+        color += vec3(0.02, 0.085, 0.1) * smoothstep(0.58, 0.88, planetFbm(d * 2.7 - 5.0)) * 0.6;
+        gl_FragColor = vec4(color * 0.42, 1.0);
+      }`,
+  })
+  const scene = new THREE.Scene()
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(10, 96, 48), material)
+  scene.add(sky)
+  const target = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType })
+  new THREE.CubeCamera(0.1, 100, target).update(renderer, scene)
+  sky.geometry.dispose()
+  material.dispose()
+  return target
+}
+
+// At camp the sky thickens toward the ridgeline: it dims the stars behind it and adds a low band of scattered light.
+export function makeHorizonGlowMaterial() {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    transparent: true,
+    premultipliedAlpha: true,
+    depthWrite: false,
+    fog: false,
+    vertexShader: 'varying vec3 vDirection; void main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vDirection;
+      void main() {
+        vec3 d = normalize(vDirection);
+        float height = max(d.y + 0.015, 0.0);
+        float haze = exp(-height / 0.05) * step(-0.02, d.y) * 0.6;
+        // Warmer toward the old sunset, cooler on the far side of the sky.
+        float sunward = dot(normalize(d.xz + 1e-4), normalize(vec2(-0.8, 0.6))) * 0.5 + 0.5;
+        vec3 color = mix(vec3(0.02, 0.05, 0.075), vec3(0.11, 0.06, 0.035), sunward * sunward);
+        float extinction = exp(-height / 0.16) * step(-0.02, d.y) * 0.8;
+        gl_FragColor = vec4(color * haze, extinction);
+        #include <colorspace_fragment>
+      }`,
+  })
+}
+
 export function makePlanetSurfaceMaterial(texture, seed, style) {
   const material = new THREE.MeshStandardMaterial({
     map: texture, bumpMap: texture, bumpScale: style.bands ? 0.015 : 0.065,
