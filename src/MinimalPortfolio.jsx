@@ -172,7 +172,7 @@ function LifeCanvas({ running, boardRef }) {
       if (!state) return
       const fade = 1 - Math.exp(-Math.min(time - (lastDraw || time), 50) / 90)
       lastDraw = time
-      if (runningRef.current && time - lastStep > 217) {
+      if (runningRef.current && time - lastStep > 163) {
         state.cells = nextGeneration(state.cells, state.columns, state.rows)
         lastStep = time
       }
@@ -254,7 +254,7 @@ export default function MinimalPortfolio() {
       for (let index = 0; index < columns * rows; index += 1) {
         if (Math.random() >= 0.14) continue
         const [x, y] = position(index)
-        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 2330 + Math.random() * 130])
+        births.push([index, Math.hypot(x - innerWidth / 2, y - innerHeight / 2) / Math.hypot(innerWidth, innerHeight) * 1750 + Math.random() * 100])
       }
     }
     births.sort((a, b) => a[1] - b[1])
