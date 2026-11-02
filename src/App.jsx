@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './space.css'
-import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness } from './spaceMaterials.js'
+import { makePlanetSurfaceMaterial, makePlanetGeometry, makePlanetCloudMaterial, makePlanetPortrait, makeParticleTexture, makeRingTexture, makeScatteringAtmosphereMaterial, makeFlameMaterial, skyElevationBrightness, withSkyBrightness, bakeNebulaSky, makeHorizonGlowMaterial } from './spaceMaterials.js'
+import { createCampAmbience, createDistantSun } from './spaceAmbience.js'
 import { createSpaceTextures } from './spaceTextures.js'
 import { createPlanetOrbit } from './spaceOrbit.js'
 import { createComet } from './spaceComet.js'
@@ -131,7 +132,7 @@ const DISCOVERIES = [
     signal: 'journeygoer\'s relay',
     world: 'Midnight Seed',
     title: 'Experience',
-    subtitle: 'Application Programmer, Ontario Government MPBSDP',
+    subtitle: 'Software Engineer at Shopify · Application Programmer at the Ontario Government',
     color: '#7195cd',
     hex: 0x31558f,
     position: [4, 66, -78],
@@ -139,11 +140,12 @@ const DISCOVERIES = [
     palette: ['#030815', '#17345c', '#285488', '#6e92ad'],
     planetStyle: { rings: true, ringTilt: 0.78 },
     body: [
-      'Built and supported automated QA tooling for Cognos BI reports using the IBM Cognos API and Playwright, helping validate 1,000+ reports per hour and protect reporting integrity.',
-      'Worked with Redshift, DBeaver SQL, AWS Lambda ETL, audit logs, and Python Excel automation to clean, transform, monitor, and prepare analytics data across large BI workflows.',
+      'Shopify, September to December 2026: built Ruby on Rails and SQL tools for merchant verification, data repair, and onboarding safeguards, and created PayPal remediation workflows on the Payments and Onboarding team.',
+      'Ontario Government, January to May 2026: co-developed a QA app with a team of four using the IBM Cognos API and Playwright. It validates 3,000+ reports an hour and protects database integrity.',
+      'Also built a Redshift star schema with SQL in DBeaver that helps organize 50,000+ reports, and supported AWS Lambda ETL of Cognos audit logs into Redshift for BI monitoring.',
       'Previously organized NRGHacks for 200+ attendees, led a 50+ member coding club, and designed a Rotary club website that helped increase membership.',
     ],
-    tags: ['Playwright', 'Cognos API', 'Redshift', 'AWS Lambda', 'Python', 'Leadership'],
+    tags: ['Ruby on Rails', 'SQL', 'Playwright', 'Cognos API', 'Redshift', 'AWS Lambda', 'Leadership'],
   },
   {
     id: 'education',
@@ -181,6 +183,25 @@ const DISCOVERIES = [
       'Reach me through email, LinkedIn, or GitHub if you want to talk ML, creative tools, game AI, or strange interactive projects.',
     ],
     tags: ['Badminton', 'Chess', 'Poker', 'Ultimate frisbee', 'Outer Wilds', 'logan.zhao@uwaterloo.ca', 'github.com/LargoLardo', 'linkedin.com/in/logan-zhao-328653232'],
+  },
+  {
+    id: 'advolve',
+    signal: 'evolutionary chorus',
+    world: 'Mutant Bloom',
+    title: 'Advolve',
+    subtitle: 'Evolving ad creatives with generative AI and predicted brain responses',
+    color: '#b8ef6a',
+    hex: 0xb8ef6a,
+    position: [72, 34, -20],
+    radius: 2.4,
+    palette: ['#0e160b', '#2c4220', '#64843a', '#bccf8e'],
+    planetStyle: { spots: 4 },
+    body: [
+      'Built with a team at Hack the North 2026, Advolve turns a product image and brief into generations of ad creatives through selection, crossover, and mutation.',
+      'Uses TRIBE v2 to predict cortical responses and score candidates, guiding each round of creative evolution.',
+      'An interactive family tree tracks each ad’s ancestry, traits, and scores, backed by durable Cloudflare workflows and GPU inference on Baseten.',
+    ],
+    tags: ['Next.js', 'PyTorch', 'Cloudflare', 'Baseten', 'github.com/LargoLardo/advolve'],
   },
 ]
 
@@ -545,7 +566,7 @@ function PortfolioSidebar({ open, activeId, onSelect, onClose, discoveredIds, po
     <aside id="field-log" className={`section-sidebar ${open ? 'is-open' : ''}`} aria-label="Field log" aria-hidden={!open} inert={!open}>
       <div className="section-sidebar-header">
         <div>
-          <span>EXPEDITION DIRECTORY / 08</span>
+          <span>EXPEDITION DIRECTORY / {String(DISCOVERIES.length).padStart(2, '0')}</span>
           <strong>Field log</strong>
         </div>
         <button ref={closeRef} type="button" onClick={onClose} aria-label="Close field log">
@@ -709,8 +730,10 @@ export default function App() {
     const textures = createSpaceTextures()
     let cancelled = false
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000102)
+    const nebulaSky = bakeNebulaSky(renderer)
+    scene.background = nebulaSky.texture
     scene.fog = new THREE.FogExp2(0x000102, 0.12)
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), makeHorizonGlowMaterial()))
 
     const camera = new THREE.PerspectiveCamera(68, initialWidth / initialHeight, 0.05, 3500)
     camera.position.set(0, EYE_HEIGHT, 4.15)
@@ -1303,6 +1326,10 @@ export default function App() {
       }),
     )
     campfire.add(sparks)
+    const ambience = createCampAmbience(particleTexture, terrainHeight)
+    scene.add(ambience.group)
+    const sun = createDistantSun(particleTexture, sunlight.position)
+    scene.add(sun.group)
 
     const planetMeshes = []
     const planetDecorRings = []
@@ -1330,8 +1357,8 @@ export default function App() {
       planetMeshes.push(planet)
 
       const atmosphere = new THREE.Mesh(
-        new THREE.SphereGeometry(discovery.radius * 1.025, 48, 32),
-        withSkyBrightness(makeAtmosphereMaterial(discovery.hex), skyBrightness),
+        new THREE.SphereGeometry(discovery.radius * 1.06, 64, 40),
+        withSkyBrightness(makeScatteringAtmosphereMaterial(discovery.hex), skyBrightness),
       )
       atmosphere.position.copy(planet.position)
       skyGroup.add(atmosphere)
@@ -1461,7 +1488,7 @@ export default function App() {
     }
 
     const orbit = createPlanetOrbit(camera, setOrbitPhase, planetMeshes)
-    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group].includes(object))
+    const campObjects = scene.children.filter(object => !object.isLight && ![skyGroup, stars, anchorStars, comet.group, sun.group].includes(object))
     const frameOffset = new THREE.Vector2()
     const projected = new THREE.Vector3()
     const anchorNormal = new THREE.Vector3()
@@ -1891,7 +1918,7 @@ export default function App() {
       const firePulse = reducedMotion ? 0.85 : 0.85 + Math.sin(elapsed * 4.1) * 0.08 + Math.sin(elapsed * 7.7) * 0.035
       const scopeAmount = scopeActiveRef.current ? 1 : 0
 
-      ambient.intensity = 0.025 + ignition * 0.01
+      ambient.intensity = 0.05 + ignition * 0.015
       fireLight.intensity = ignition * (10.5 + firePulse * 2.2)
       lowGlow.intensity = ignition * (0.55 + firePulse * 0.3)
       coalMaterial.emissiveIntensity = ignition * (0.5 + firePulse * 0.3)
@@ -2015,6 +2042,8 @@ export default function App() {
       camera.updateMatrixWorld()
 
       stars.position.copy(camera.position)
+      sun.follow(camera)
+      ambience.update(reducedMotion ? 0 : elapsed, dt, ignition, renderer.domElement.height / 2, reducedMotion)
       anchorStars.position.copy(camera.position)
       comet.update(elapsed, dt, camera, reducedMotion)
       waveAge += dt
@@ -2135,7 +2164,7 @@ export default function App() {
         if (!reducedMotion) planet.rotation.y += dt * (0.012 + index * 0.002)
         const atmosphere = planet.userData.atmosphere
         atmosphere.scale.copy(planet.scale)
-        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.32 : scopeAmount ? 0.3 : planet.userData.discovered ? 0.12 : 0.06) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
+        atmosphere.material.uniforms.opacity.value = THREE.MathUtils.lerp(atmosphere.material.uniforms.opacity.value, (inspecting ? 0.55 : scopeAmount ? 0.4 : planet.userData.discovered ? 0.16 : 0.08) + Math.min(0.06, burstGlow * 0.02) * scopeAmount, blend)
         const decorRing = planetDecorRings[index]
         if (decorRing) {
           decorRing.scale.copy(planet.scale)
@@ -2266,6 +2295,7 @@ export default function App() {
       if (mount.contains(renderer.domElement)) {
         mount.removeChild(renderer.domElement)
       }
+      nebulaSky.dispose()
       disposeScene(scene, renderer)
     }
   }, [closeDiscovery, revealDiscovery, setScopeActive])
