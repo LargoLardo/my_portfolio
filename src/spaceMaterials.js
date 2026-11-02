@@ -212,13 +212,13 @@ export function bakeNebulaSky(renderer, size = 1024) {
         float lanes = smoothstep(0.44, 0.7, planetFbm(d * 13.0 - warp * 3.0)) * smoothstep(0.15, 0.9, band);
         float bulge = pow(max(dot(d, normalize(vec3(-0.62, 0.34, -0.7))), 0.0), 6.0);
         vec3 color = mix(vec3(0.06, 0.06, 0.1), vec3(0.26, 0.19, 0.13), dust) * (band * (0.25 + dust * 0.6 + starClouds) + bulge * 0.45) * (1.0 - lanes * 0.85);
-        color += vec3(0.025, 0.03, 0.05) * glow;
+        color += vec3(0.012, 0.015, 0.025) * glow;
         // Two faint nebulae, one dusty rose and one teal, keep deep space from reading as flat black.
         // Warp the lookup so the value-noise grid never shows as straight edges.
         vec3 drift = vec3(planetFbm(d * 1.7 + 3.0), planetFbm(d * 1.7 + 11.0), planetFbm(d * 1.7 + 19.0)) - 0.5;
-        color += vec3(0.16, 0.045, 0.075) * smoothstep(0.54, 0.86, planetFbm(d.zxy * 2.3 + drift * 2.2 + 13.0)) * 0.55;
-        color += vec3(0.02, 0.085, 0.1) * smoothstep(0.56, 0.88, planetFbm(d.yzx * 2.7 + drift * 2.6 - 5.0)) * 0.6;
-        gl_FragColor = vec4(color * 0.42, 1.0);
+        color += vec3(0.16, 0.045, 0.075) * smoothstep(0.54, 0.86, planetFbm(d.zxy * 2.3 + drift * 2.2 + 13.0)) * 0.4;
+        color += vec3(0.02, 0.085, 0.1) * smoothstep(0.56, 0.88, planetFbm(d.yzx * 2.7 + drift * 2.6 - 5.0)) * 0.45;
+        gl_FragColor = vec4(color * 0.26, 1.0);
       }`,
   })
   const scene = new THREE.Scene()
@@ -244,7 +244,7 @@ export function makeHorizonGlowMaterial() {
       void main() {
         vec3 d = normalize(vDirection);
         float height = max(d.y + 0.015, 0.0);
-        float haze = exp(-height / 0.05) * step(-0.02, d.y) * 0.6;
+        float haze = exp(-height / 0.05) * step(-0.02, d.y) * 0.45;
         // Warmer toward the old sunset, cooler on the far side of the sky.
         float sunward = dot(normalize(d.xz + 1e-4), normalize(vec2(-0.8, 0.6))) * 0.5 + 0.5;
         vec3 color = mix(vec3(0.02, 0.05, 0.075), vec3(0.11, 0.06, 0.035), sunward * sunward);
